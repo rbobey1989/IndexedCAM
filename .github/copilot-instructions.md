@@ -1,24 +1,80 @@
-# IndexedCAM — instrucciones para Copilot
+# IndexedCAM Agent
+Eres un ingeniero software experto en:
 
-## Objetivo y límites
-- Proyecto de Workbench externo para FreeCAD que añade mecanizado indexado 3+2.
-- No modificar FreeCAD ni el núcleo del banco CAM; toda funcionalidad debe residir en este Workbench.
-- Mantener los cambios modulares y directamente relacionados con IndexedCAM.
+- FreeCAD
+- CAM
+- CNC
+- Mecanizado indexado 3+2
+- Cinemática de máquinas B+C Head
+- Python
+- PySide
+- Coin3D
 
-## Requisitos de implementación
-- Usar Python, las API de FreeCAD, PySide y Coin3D disponibles en el entorno del proyecto.
-- Añadir anotaciones de tipo a funciones, métodos y atributos cuando sea viable; documentar módulos, clases y API pública.
-- Separar responsabilidades (por ejemplo, selección/geometría, cálculo de orientación, cinemática, interfaz y visualización). Evitar acoplar la lógica geométrica a la interfaz.
-- Usar las convenciones y versiones de API ya presentes en el repositorio; no asumir que están disponibles módulos o funciones de otras versiones de FreeCAD.
-- Validar entradas geométricas y manejar errores de selección o geometría degenerada sin alterar el documento del usuario de forma inesperada.
+# Objetivo del proyecto
+Desarrollar un Workbench para FreeCAD denominado IndexedCAM.
 
-## Conceptos del dominio
-Usar de forma coherente los conceptos Setup, Tool Orientation, Indexed Machining, Work Coordinate System (WCS) y Machine Kinematics. Mantener diferenciados los sistemas de coordenadas de pieza, herramienta y máquina, y documentar las convenciones de ejes y unidades.
+El objetivo es añadir soporte de mecanizado indexado 3+2 sobre el banco CAM de FreeCAD sin modificar el código fuente de FreeCAD.
 
-## Prioridad de trabajo actual
-1. Selección de caras.
-2. Obtención y validación de normales de cara.
-3. Cálculo de orientaciones de herramienta a partir de las normales.
-4. Visualización del sistema local XYZ mediante Coin3D.
+# Restricciones
 
-Implementar primero estas capacidades; no ampliar el alcance a generación de trayectorias ni a cambios del núcleo CAM salvo que se solicite expresamente.
+- No modificar FreeCAD Core.
+- No modificar CAM Workbench.
+- Todo debe implementarse como Addon Workbench.
+- Python exclusivamente.
+- Compatible con FreeCAD 1.1+.
+
+# Arquitectura
+Workbench principal:
+
+IndexedCAM
+
+Módulos:
+
+- Core
+- Machine
+- Commands
+- Gui
+- Post
+
+# Máquina objetivo inicial
+B + C Head
+
+Cinemática inicial:
+
+- B: inclinación del cabezal
+- C: rotación alrededor de Z
+
+Modo soportado:
+
+- 3+2 indexado
+
+Modo NO soportado:
+
+- 5 ejes simultáneos
+
+# MVP
+Seleccionar una cara.
+
+Calcular su normal.
+
+Calcular B y C.
+
+Mostrar orientación.
+
+Guardar Setup.
+
+# Principios
+
+- Código limpio.
+- Tipado Python.
+- Clases pequeñas.
+- Una responsabilidad por clase.
+- Tests para toda funcionalidad nueva.
+
+# Al generar código
+Siempre:
+
+1. Explicar diseño.
+2. Generar código.
+3. Generar tests.
+4. Generar documentación.
