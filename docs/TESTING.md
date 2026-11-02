@@ -113,3 +113,18 @@ setup = IndexedSetup("Cara 1", analysis.normal, angles.b, angles.c, origin=analy
 print(setup.to_dict())
 print(setup.local_frame())
 ```
+
+## Gestionar setups en el documento activo
+
+```python
+import FreeCAD
+from IndexedCAM.Core.document_storage import DocumentStorage
+from IndexedCAM.Core.setup_manager import SetupManager
+
+manager = SetupManager(DocumentStorage(FreeCAD.ActiveDocument))
+manager.add(setup)                 # el IndexedSetup de la sección anterior
+manager.rename("Cara 1", "Lado X")
+print(manager.names())
+```
+
+Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con `SetupManager(DocumentStorage(FreeCAD.ActiveDocument))`. Aparecen como el objeto `IndexedCAM_Setups` en el árbol.

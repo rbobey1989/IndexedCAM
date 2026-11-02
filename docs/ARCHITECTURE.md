@@ -20,3 +20,9 @@ Cada setup agrupa las operaciones CAM que se ejecutan en esa orientación. Las o
 ## Postprocesado
 
 El postprocesador genera los movimientos de posicionamiento necesarios antes de las operaciones de cada setup. Estos movimientos llevan la máquina a los ángulos B y C asociados al setup.
+
+## Gestión de setups
+
+`SetupManager` (`IndexedCAM/Core/setup_manager.py`) mantiene una lista ordenada de `IndexedSetup` con nombres únicos (sin distinguir mayúsculas): `add`, `get`, `rename`, `delete`, `move`, `reorder`, `update` y `unique_name`. Cada operación valida antes de persistir, de modo que un error no altera el estado.
+
+La persistencia es intercambiable (`SetupStorage`). `DocumentStorage` guarda el JSON de los setups en un objeto `App::FeaturePython` llamado `IndexedCAM_Setups`, que se crea solo al primer guardado y viaja dentro del `.FCStd`. `MemoryStorage` se usa en tests.

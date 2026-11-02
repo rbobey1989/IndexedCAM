@@ -10,7 +10,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 3 | #6 | `BCMachine`: límites (B 0..180, C ±360), vector de herramienta, validación | Hecha |
 | 4 | #3 | `OrientationSolver`: normal → orientación válida para la máquina (elige solución dentro de límites) | Hecha |
 | 5 | #4 | Modelo `Setup` (nombre, normal, WCS, B, C, operaciones, metadatos) | Hecha |
-| 6 | #7/#8 (duplicadas: cerrar una) | `SetupManager`: crear/renombrar/borrar/ordenar en el documento | Pendiente |
+| 6 | #7 (#8 cerrada como duplicada) | `SetupManager`: crear/renombrar/borrar/ordenar en el documento | Hecha |
 | 7 | #5 | Triada XYZ local con Coin3D | Pendiente |
 | 8 | #9 | Comando "Face Orientation" + registro del Workbench (`InitGui.py`) | Pendiente |
 | 9 | #11 | Investigación de integración con CAM (sin tocar el core) | Pendiente |
