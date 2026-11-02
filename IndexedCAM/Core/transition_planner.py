@@ -125,6 +125,15 @@ def equivalent_targets(
     return sorted(found, key=lambda t: (abs(t[0] - start_b) + abs(t[1] - start_c), t))
 
 
+@dataclass(frozen=True)
+class PlanResult:
+    """``transition`` is validated or None; ``shown`` is what to display."""
+
+    transition: Optional[Transition]
+    shown: Optional[Transition]
+    error: Optional[str]
+
+
 class TransitionPlanner:
     """Builds validated transitions between two poses."""
 
@@ -148,20 +157,29 @@ class TransitionPlanner:
 
     def plan(self, start: Pose, end: Pose) -> Transition:
         """Transition from ``start`` (previous step end) to ``end`` (next step start)."""
+        result = self.try_plan(start, end)
+        if result.transition is None:
+            raise TransitionError(result.error or "sin alternativas alcanzables")
+        return result.transition
+
+    def try_plan(self, start: Pose, end: Pose) -> "PlanResult":
+        """Like ``plan`` but never raises: on failure ``shown`` is the first
+        (unvalidated) route so it can be displayed with its collisions."""
+        shown: Optional[Transition] = None
         failures: List[str] = []
         for scale in self._scales:
             sphere = self._sphere.scaled(scale)
             for b2, c2 in equivalent_targets(self._machine, end.b, end.c, start.b, start.c):
                 transition = self._build(start, end, b2, c2, sphere)
+                shown = shown or transition
                 problem = self._validate(transition)
                 if problem is None:
-                    return transition
+                    return PlanResult(transition, transition, None)
                 failures.append(problem)
-        raise TransitionError(
-            "No hay transición libre de colisiones ({} alternativas probadas). Último fallo: {}".format(
-                len(failures), failures[-1] if failures else "sin alternativas alcanzables"
-            )
+        error = "No hay transición libre de colisiones ({} alternativas probadas). Último fallo: {}".format(
+            len(failures), failures[-1] if failures else "sin alternativas alcanzables"
         )
+        return PlanResult(None, shown, error)
 
     def _validate(self, transition: Transition) -> Optional[str]:
         for sample in transition.samples:
