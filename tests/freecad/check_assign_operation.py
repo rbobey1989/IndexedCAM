@@ -145,6 +145,10 @@ try:
     log("start", items[0].start, "end", items[0].end)
     check(60.0 < items[0].start.point[0] <= 70.5 and items[0].start.b == 90.0,
           "step start lies above the X=60 face, in part coordinates")
+    from IndexedCAM.Machine.envelope import Envelope
+
+    env = bridge.envelope_for(op1, Envelope())
+    check((env.tool.radius, env.tool.length) == (2.5, 50.0), "envelope takes the CAM tool size")
     program.move(third.operation.Name, 0)
     check(program.steps()[0].operation == third.operation.Name, "program can be reordered")
 

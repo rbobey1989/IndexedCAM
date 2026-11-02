@@ -13,6 +13,7 @@ from IndexedCAM.Core import local_model
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
 from IndexedCAM.Core.program import Step
+from IndexedCAM.Machine.envelope import Envelope
 
 JOB_MARKER = "IndexedCAMJob"
 OPERATION_SETUP_PROPERTY = "IndexedSetup"
@@ -114,6 +115,11 @@ class CamBridge:
             for operation in self.operations_of(job, old):
                 setattr(operation, OPERATION_SETUP_PROPERTY, new)
         self._document.recompute()
+
+    def envelope_for(self, operation: Any, base: Envelope) -> Envelope:
+        """``base`` with the cutting tool of the operation's CAM tool controller."""
+        tool = operation.ToolController.Tool
+        return base.with_tool(float(tool.Diameter.Value) / 2.0, float(tool.Length.Value))
 
     def bound_steps(self, job: Any) -> List[Step]:
         """(Setup, operation) of every bound operation, in Job order."""

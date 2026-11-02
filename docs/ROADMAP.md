@@ -17,7 +17,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 10 | #12 | Puente Setup ↔ Job CAM (Job único, clon local por Setup, alturas por operación) | Hecha |
 | 11 | #13 | Comando "Asignar operación" tras Face Orientation | Hecha |
 | 12 | #14 | Programa: secuencia de pasos encadenados | Hecho |
-| 13 | #15 | Envolvente de herramienta/cabezal en la máquina | Pendiente |
+| 13 | #15 | Envolvente de herramienta/cabezal en la máquina | Hecho |
 | 14 | #16 | `TransitionPlanner` (retirada, giro, aproximación) | Pendiente |
 | 15 | #17 | `CollisionChecker` | Pendiente |
 | 16 | #18 | Visualización de herramienta/movimientos y reproductor | Pendiente |

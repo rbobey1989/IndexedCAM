@@ -8,10 +8,11 @@ use other signs, zeros or axis order; adapt this definition per machine.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple
 
 from IndexedCAM.Machine.bc_head import Vector, bc_to_normal
+from IndexedCAM.Machine.envelope import Envelope
 
 Matrix3 = Tuple[Vector, Vector, Vector]
 
@@ -40,6 +41,7 @@ class BCMachine:
 
     b_limits: AxisLimits = AxisLimits(0.0, 180.0)
     c_limits: AxisLimits = AxisLimits(-360.0, 360.0)
+    envelope: Envelope = field(default_factory=Envelope)
 
     def is_reachable(self, b: float, c: float) -> bool:
         """Return True if both B and C are within the axis limits."""
