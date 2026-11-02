@@ -1,0 +1,1 @@
+"""IndexedCAM application initialization."""

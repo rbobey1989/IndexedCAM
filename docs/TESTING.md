@@ -1,0 +1,98 @@
+# Probar IndexedCAM en FreeCAD
+
+## Pruebas automáticas
+
+Desde la raíz del repositorio:
+
+```bash
+python3 -m pytest -q
+```
+
+Estas pruebas validan la lógica Python independiente de FreeCAD.
+El `FaceAnalyzer` se prueba con caras simuladas en pytest y se ha verificado
+además con caras plana y esférica reales en FreeCAD 1.1.4.
+
+## Instalar el Workbench en Linux
+
+IndexedCAM incluye un registro mínimo para que FreeCAD lo muestre en la lista de
+Workbenches. En FreeCAD 1.1, enlaza la raíz del repositorio en la carpeta de
+addons versionada del usuario:
+
+```bash
+mkdir -p ~/.local/share/FreeCAD/v1-1/Mod
+ln -s /ruta/al/IndexedCAM_WorkBench \
+  ~/.local/share/FreeCAD/v1-1/Mod/IndexedCAM
+```
+
+Sustituye `/ruta/al/IndexedCAM_WorkBench` por la ruta donde clonaste el
+repositorio (por ejemplo, `/home/usuario/proyectos/IndexedCAM_WorkBench`). Si el
+enlace ya existe, no vuelvas a crearlo. Para quitar solo el enlace:
+
+```bash
+rm ~/.local/share/FreeCAD/v1-1/Mod/IndexedCAM
+```
+
+La carpeta `v1-1` corresponde a FreeCAD 1.1. Otras versiones pueden usar un
+directorio de datos versionado diferente; comprueba `FreeCAD.getUserAppDataDir()`
+desde la consola Python de esa instalación.
+
+Reinicia FreeCAD y selecciona **IndexedCAM** en el selector de Workbench. El
+Workbench todavía no tiene un comando gráfico; usa la consola para probar el
+analizador de una cara seleccionada.
+
+## Comprobar el solver desde la consola Python
+
+Abre **View → Panels → Python console** y ejecuta:
+
+```python
+from IndexedCAM.Machine.bc_head import normal_to_bc
+
+normal_to_bc((0, 0, 1))  # B=0, C=0
+normal_to_bc((1, 0, 0))  # B=90, C=0
+normal_to_bc((0, 1, 0))  # B=90, C=90
+```
+
+## Analizar una cara seleccionada
+
+Selecciona exactamente una cara en la vista 3D y ejecuta en la consola:
+
+```python
+selection = Gui.Selection.getSelectionEx()
+if len(selection) != 1 or len(selection[0].SubObjects) != 1:
+    raise RuntimeError("Selecciona exactamente una cara")
+
+from IndexedCAM.Core.face_analyzer import FaceAnalyzer
+
+analysis = FaceAnalyzer().analyze(selection[0].SubObjects[0])
+print("Normal:", analysis.normal)
+print("Centro de masa:", analysis.center)
+print("Área:", analysis.area)
+print("Orientación topológica:", analysis.orientation)
+print("Tipo de superficie:", analysis.surface_type)
+print("Punto donde se evaluó la normal:", analysis.normal_point)
+```
+
+La normal se evalúa en el punto medio del rango paramétrico de la cara. En una
+cara curva puede variar a lo largo de la superficie; el centro de masa se
+devuelve por separado y no necesariamente coincide con el punto de evaluación.
+
+Para validar cambios al código fuente sin reinstalar, cierra y vuelve a abrir
+FreeCAD, o recarga el módulo en consola:
+
+```python
+import importlib
+import IndexedCAM.Machine.bc_head as bc_head
+importlib.reload(bc_head)
+```
+
+La recarga no actualiza automáticamente instancias de clases importadas con
+`from ... import ...`; vuelve a importarlas después de recargar.
+
+## Ciclo de desarrollo recomendado
+
+1. Ejecuta los tests rápidos con `python3 -m pytest -q`.
+2. Reinicia FreeCAD para probar la integración real con su intérprete y API.
+3. Prueba las operaciones geométricas y visuales dentro de FreeCAD cuando estén
+   implementadas.
+4. Comprueba los cambios de GUI en un documento desechable antes de aplicarlos
+   a un proyecto de usuario.

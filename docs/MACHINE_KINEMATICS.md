@@ -26,3 +26,14 @@ Convención: `R = Rz(C) @ Ry(B)`, `n = (sin B cos C, sin B sin C, cos B)`. Inver
 - Casos de aceptación: cara superior → B=0 C=0; cara X → B=90 C=0; cara Y → B=90 C=90.
 
 Tests: `python -m pytest tests`.
+
+## Orientación alcanzable (`IndexedCAM/Core/orientation_solver.py`)
+
+Decisión: la máquina usa **B∈[−90, 90]** (inclinación simétrica; B=0 es herramienta vertical) y C∈[−360, 360]. El rango B∈[0,180] del solver puro es solo la salida matemática de `acos`.
+
+`OrientationSolver(machine).solve(normal, previous=None)` genera las dos familias equivalentes, `(B, C+360k)` y `(−B, C+180+360k)`, descarta las que violan los límites y elige:
+
+- con `previous`: la de menor recorrido en C y luego en B;
+- sin `previous`: B ≥ 0 y menor |C|.
+
+Devuelve `OrientationSolution(angles, alternatives)`. Una normal con `nz < 0` (cara orientada hacia abajo, p. ej. socavado) lanza `UnreachableOrientationError`, subclase de `ValueError`. En la singularidad (normal ∥ Z) se conserva el C de `previous`.
