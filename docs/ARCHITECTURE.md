@@ -5,9 +5,13 @@
 Un **Setup** representa una orientación indexada de la pieza. Contiene:
 
 - **Nombre**: identificador del setup.
-- **Normal**: normal de la superficie o plano de trabajo.
-- **Sistema XYZ local**: sistema de coordenadas local del setup.
-- **A, B y C**: ángulos de los ejes rotativos para alcanzar la orientación.
+- **Normal**: normal unitaria de la superficie (dirección del eje de herramienta, en coordenadas de pieza).
+- **WCS**: sistema de coordenadas de trabajo (por defecto `G54`) y origen del setup.
+- **Sistema XYZ local**: derivado de `Rz(C) @ Ry(B)`; su Z coincide con la normal.
+- **B y C**: ángulos de los ejes rotativos del cabezal B+C (no hay eje A).
+- **Operaciones** y **metadatos** serializables (JSON).
+
+Implementación: `IndexedCAM/Core/indexed_setup.py` (`IndexedSetup`, `to_dict`/`from_dict`).
 
 ## Operación
 
@@ -15,4 +19,4 @@ Cada setup agrupa las operaciones CAM que se ejecutan en esa orientación. Las o
 
 ## Postprocesado
 
-El postprocesador genera los movimientos de posicionamiento necesarios antes de las operaciones de cada setup. Estos movimientos llevan la máquina a los ángulos A, B y C asociados al setup.
+El postprocesador genera los movimientos de posicionamiento necesarios antes de las operaciones de cada setup. Estos movimientos llevan la máquina a los ángulos B y C asociados al setup.

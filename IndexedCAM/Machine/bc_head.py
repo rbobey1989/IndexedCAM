@@ -25,7 +25,8 @@ class BCAngles(NamedTuple):
     c: float
 
 
-def _normalize(normal: Sequence[float]) -> Vector:
+def normalize(normal: Sequence[float]) -> Vector:
+    """Return the unit vector; reject non-3D, non-finite or zero vectors."""
     if len(normal) != 3:
         raise ValueError("normal must have exactly 3 components")
     x, y, z = (float(v) for v in normal)
@@ -54,7 +55,7 @@ def normal_to_bc(
     undetermined: ``previous_c`` is kept if given, otherwise C = 0. A flipped
     vertical normal (B = 180) is equally singular.
     """
-    nx, ny, nz = _normalize(normal)
+    nx, ny, nz = normalize(normal)
     b = math.degrees(math.acos(max(-1.0, min(1.0, nz))))
     if math.sqrt(nx * nx + ny * ny) < tolerance:
         c = 0.0 if previous_c is None else _wrap_c(float(previous_c))
@@ -77,6 +78,6 @@ def verify_solution(
     normal: Sequence[float], angles: BCAngles, tolerance: float = 1e-9
 ) -> bool:
     """Check that B/C reconstruct the (normalized) normal within tolerance."""
-    expected = _normalize(normal)
+    expected = normalize(normal)
     actual = bc_to_normal(angles.b, angles.c)
     return all(abs(e - a) <= tolerance for e, a in zip(expected, actual))

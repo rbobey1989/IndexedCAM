@@ -11,7 +11,7 @@ Seleccionar una cara de FreeCAD y calcular la orientación de máquina necesaria
 ## Salida
 
 - Normal de la cara.
-- Ángulos de orientación de máquina: A, B y C.
+- Ángulos de orientación de máquina: B y C.
 
 ## Fuera de alcance
 

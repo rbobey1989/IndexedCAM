@@ -96,3 +96,20 @@ La recarga no actualiza automáticamente instancias de clases importadas con
    implementadas.
 4. Comprueba los cambios de GUI en un documento desechable antes de aplicarlos
    a un proyecto de usuario.
+
+## Crear un Setup desde una cara seleccionada
+
+Con una cara seleccionada (ver sección anterior):
+
+```python
+from IndexedCAM.Core.face_analyzer import FaceAnalyzer
+from IndexedCAM.Core.orientation_solver import OrientationSolver
+from IndexedCAM.Core.indexed_setup import IndexedSetup
+
+face = Gui.Selection.getSelectionEx()[0].SubObjects[0]
+analysis = FaceAnalyzer().analyze(face)
+angles = OrientationSolver().solve(analysis.normal).angles
+setup = IndexedSetup("Cara 1", analysis.normal, angles.b, angles.c, origin=analysis.center)
+print(setup.to_dict())
+print(setup.local_frame())
+```
