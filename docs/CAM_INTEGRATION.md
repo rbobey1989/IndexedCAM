@@ -33,7 +33,7 @@ Verificado en FreeCAD 1.1.4 (dos clones en un mismo Job con `job.Model.addObject
 
 - Cada operación genera la trayectoria en el marco local de su clon (OpB: Z=60 constante sobre la cara inclinada).
 - **Problema:** el bruto del Job es único y abarca la unión de los clones. Con los valores por defecto, OpA arranca en Z=61 hasta 30 (384 comandos) en lugar de cortar solo la cara.
-- **Solución verificada:** IndexedCAM fija por operación `StartDepth`, `FinalDepth`, `SafeHeight` y `ClearanceHeight` a partir de la cara de su clon (`op.setExpression(prop, None)` y asignar el valor). Persisten tras `recompute()`: OpA queda en Z 30–38 con 60 comandos, OpB en Z 60–68.
+- **Solución verificada:** IndexedCAM enlaza por operación `StartDepth`, `SafeHeight` y `ClearanceHeight` al punto más alto de su clon mediante **expresiones** (`<clon>.Shape.BoundBox.ZMax * 1 mm + offset`). `FinalDepth` lo sigue calculando CAM desde la cara. Con expresiones las alturas se actualizan solas al editar el modelo original (con valores fijos quedaban obsoletas y CAM emitía avisos "shape is not planar").
 
 Reglas derivadas:
 
@@ -53,8 +53,9 @@ Un clon por Setup no debe pesar ni en memoria, ni en el archivo, ni en la recomp
 Diseño adoptado:
 
 - `LocalModel` es un `Part::FeaturePython` con un proxy del addon y propiedades `Source` (enlace al modelo) y `Normal`/Setup.
+- La transformación Placement es la inversa del marco local del Setup (`Core/local_placement.py`, matemática pura y testeada): `p_local = Rᵀ (p − origen)`, no la rotación de arco mínimo, para coincidir con la triada y con el post.
 - `execute`: `shape = Source.Shape.copy(False)` (**comparte la geometría**, no la duplica), `obj.Shape = shape` y `obj.Placement = rotación del Setup` (hay que fijar el `Placement` del objeto; poner la rotación en el `Shape` no basta).
-- `Shape` se marca `Transient`: **no se guarda en el archivo**. Al cargar, `onDocumentRestored` hace `touch()` y el clon se reconstruye al recalcular.
+- `Shape` se marca `Transient`: **no se guarda en el archivo**. Al cargar, `onDocumentRestored` reconstruye la forma directamente (un `touch()` no basta: el clon quedaba con forma nula).
 - Memoria: una única geometría compartida por todos los clones; solo cambia la ubicación.
 - Los clones dependen de `Source`, así que siguen los cambios paramétricos del modelo sin sincronización manual (resuelve el riesgo abierto de sincronización).
 - Verificado: dos clones en un Job, una `MillFace` por clon con alturas propias → OpA (cara +X) Z=60, OpB (cara +Y) Z=40; guardar, reabrir y recalcular restaura clones y trayectorias.
@@ -65,7 +66,7 @@ Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente
 - La relación operación → Setup se guarda en `IndexedSetup.operations` (y la inversa en el programa), sin tocar propiedades del Job.
 - El orden de salida lo define el programa de IndexedCAM, no `Job.Fixtures` ni `OrderOutputBy`.
 - Alternativa descartada: un Job por Setup (multiplica Jobs, herramientas y hojas de configuración). También se descartan varios `Fixtures` (repiten todas las operaciones) y parchear operaciones CAM.
-- Pendiente de verificar: operaciones que usan el bruto (Adaptive, dressups) y el comportamiento al editar el modelo original.
+- Verificado: `Adaptive` y `Pocket` funcionan sobre el clon local; al editar el modelo original el clon se actualiza solo; 4 clones de una pieza de 150 caras recalculan en ~1 s. Los dressups (Boundary, Tags…) no se han probado todavía.
 
 ## Flujo de usuario
 
@@ -112,7 +113,9 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 | Módulo | Responsabilidad | Depende de FreeCAD |
 | --- | --- | --- |
 | `Core/program.py` | Secuencia ordenada de pasos y punto final de cada uno | no |
-| `Core/cam_bridge.py` | Crear el Job único, clon local por Setup, crear/listar operaciones, leer `Path` | sí |
+| `Core/local_placement.py` | Transformación parte → marco local y alturas por operación | no |
+| `Core/local_model.py` | Clon ligero `LocalModel` por Setup | sí |
+| `Core/cam_bridge.py` | Job único, `attach_setup`, `bind_operation`, `refresh_all`, `detach_setup` | sí |
 | `Core/transition_planner.py` | Retirada, giro sobre esfera, aproximación, alternativas | no |
 | `Core/collision_checker.py` | Interfaz + implementación con `Part` | sí (implementación) |
 | `Machine/envelope.py` | Herramienta, portaherramientas, cabezal, pivote | no |

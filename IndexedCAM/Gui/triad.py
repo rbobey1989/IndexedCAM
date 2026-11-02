@@ -10,34 +10,13 @@ import math
 from typing import Any, Optional, Tuple
 
 from IndexedCAM.Core.indexed_setup import LocalFrame
+from IndexedCAM.Core.local_placement import Quaternion, frame_to_quaternion
 
-Quaternion = Tuple[float, float, float, float]  # x, y, z, w
+__all__ = ["frame_to_quaternion"]
 
 AXIS_COLORS = ((1.0, 0.0, 0.0), (0.0, 0.8, 0.0), (0.0, 0.2, 1.0))
 AXIS_LABELS = ("X", "Y", "Z")
 DEFAULT_SIZE = 20.0
-
-
-def frame_to_quaternion(frame: LocalFrame) -> Quaternion:
-    """Unit quaternion (x, y, z, w) of the rotation with columns X, Y, Z axes."""
-    (m00, m10, m20) = frame.x_axis
-    (m01, m11, m21) = frame.y_axis
-    (m02, m12, m22) = frame.z_axis
-    trace = m00 + m11 + m22
-    if trace > 0.0:
-        s = math.sqrt(trace + 1.0) * 2.0
-        w, x, y, z = 0.25 * s, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s
-    elif m00 > m11 and m00 > m22:
-        s = math.sqrt(1.0 + m00 - m11 - m22) * 2.0
-        w, x, y, z = (m21 - m12) / s, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s
-    elif m11 > m22:
-        s = math.sqrt(1.0 + m11 - m00 - m22) * 2.0
-        w, x, y, z = (m02 - m20) / s, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s
-    else:
-        s = math.sqrt(1.0 + m22 - m00 - m11) * 2.0
-        w, x, y, z = (m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s
-    norm = math.sqrt(x * x + y * y + z * z + w * w)
-    return (x / norm, y / norm, z / norm, w / norm)
 
 
 def suggested_size(face_area: float) -> float:

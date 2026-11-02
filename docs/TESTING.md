@@ -153,3 +153,13 @@ Ejes: X rojo, Y verde, Z azul (eje de herramienta, apunta a la normal de la cara
 5. El Setup se guarda en el documento. `Ctrl+Z` lo deshace y `Ctrl+Y` lo rehace.
 
 Sin selección válida aparece un aviso.
+
+## Puente con el banco CAM (#12)
+
+Las pruebas puras corren con `python3 -m pytest -q`. La comprobación dentro de FreeCAD (Job único, clones ligeros, alturas, recarga del archivo) se lanza con el AppImage; el log termina en `PASS`:
+
+```bash
+INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
+  /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_cam_bridge.py
+cat /tmp/bridge.log
+```

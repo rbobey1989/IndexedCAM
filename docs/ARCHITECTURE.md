@@ -34,3 +34,7 @@ La persistencia es intercambiable (`SetupStorage`). `DocumentStorage` guarda el 
 ## Comandos
 
 `Commands/face_orientation.py` contiene `FaceOrientationWorkflow` (sin dependencia de FreeCAD, con colaboradores inyectados): extrae la cara, calcula B/C (`Core/face_orientation.py`), previsualiza la triada, pide el nombre y añade el Setup dentro de una transacción deshacible. `FaceOrientationCommand` lo conecta con la GUI y `InitGui.py` lo registra en la barra y el menú.
+
+## Puente CAM
+
+`Core/cam_bridge.py` mantiene un único Job CAM: cada Setup aporta un `LocalModel` (`Core/local_model.py`, clon ligero con `Shape` transitorio y `Placement` = inversa del marco del Setup) y cada operación enlaza a una cara de su clon con las alturas ligadas por expresión. Ver [CAM_INTEGRATION.md](CAM_INTEGRATION.md).
