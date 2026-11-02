@@ -144,11 +144,13 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 
 ## Comprobador de colisiones (#17)
 
-`PartCollisionChecker(envelope, obstacles, margen=2 mm)` (`Core/collision_checker.py`). Obstáculos en coordenadas de pieza: modelo y bruto (*cortables*, `obstacles_from_job`) y utillaje (opcional). Dos modos:
+`PartCollisionChecker(envelope, obstacles, margen=2 mm)` (`Core/collision_checker.py`). Obstáculos en coordenadas de pieza: la pieza y el bruto (*cortables*) y el utillaje. `checker_for_operation(bridge, pieza, operación, envolvente_base, bruto=None, utillaje=())` lo construye con la herramienta real de la operación. El bruto del Job **no** se usa: con un modelo local por Setup su caja abarca todos los clones rotados, no el bruto real; si se necesita, se pasa explícitamente. Dos modos:
 
 - `collision(punta, B, C)`: tránsito; todos los cilindros contra todos los obstáculos.
-- `cutting_collision(...)`: mecanizado; la herramienta puede tocar lo cortable, pero portaherramientas y cabezal no, y el utillaje se comprueba con todo. La parte no cortante de la herramienta (vástago) tampoco se distingue de la zona de corte: se asume que toda la longitud puede cortar.
+- `cutting_collision(...)`: mecanizado; solo la parte cortante (`CuttingEdgeHeight`) puede tocar lo cortable. El vástago (resto de la herramienta, con `ShankDiameter`), el portaherramientas y el cabezal no, y el utillaje se comprueba contra todo.
 
-`check_operation(check, op.Path.Commands, frame, B, C)` recorre la trayectoria (puntos cada ≤5 mm; arcos aproximados por sus extremos) y devuelve el primer choque con su posición. Un filtro previo por cajas envolventes evita llamar a `distToShape` cuando no hay cercanía. Verificado con `tests/freecad/check_collision.py`.
+`check_operation(check, op.Path.Commands, frame, B, C)` recorre la trayectoria (puntos cada ≤5 mm; los arcos G2/G3 con I/J se teselan) y devuelve el primer choque con su posición.
 
-Pendiente de integrar en un comando: construir el comprobador desde el Job y mostrar el resultado (llega con #18).
+**Carrera lineal:** `BCMachine.travel` (`TravelBox`, opcional) limita la posición del pivote de B en coordenadas de pieza (se asume G54 en el origen de la pieza); el planificador rechaza muestras fuera de la caja ("fuera de la carrera lineal").
+
+Verificado con `tests/freecad/check_collision.py` y `check_assign_operation.py`.

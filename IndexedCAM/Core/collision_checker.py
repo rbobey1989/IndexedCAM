@@ -3,7 +3,7 @@
 ``PartCollisionChecker`` implements the ``CollisionChecker`` protocol of the
 transition planner. Obstacles are in part coordinates. *Cuttable* obstacles
 (the model and the stock) are meant to be touched by the cutting tool, so while
-machining the tool cylinder is not tested against them; the holder and the head
+machining only the flutes are not tested against them; the shank, holder and head
 always are, and fixtures are tested against everything.
 """
 
@@ -101,11 +101,31 @@ def check_operation(
     return None
 
 
-def obstacles_from_job(source: Any, job: Any, fixtures: Iterable[Any] = ()) -> List[Obstacle]:
-    """Model and stock (cuttable) plus any extra fixture objects."""
+def checker_for_operation(
+    bridge: Any,
+    source: Any,
+    operation: Any,
+    base: Envelope,
+    stock: Any = None,
+    fixtures: Iterable[Any] = (),
+    margin: float = 2.0,
+) -> PartCollisionChecker:
+    """Checker for one operation: its CAM tool, the part, optional stock and fixtures."""
+    return PartCollisionChecker(
+        bridge.envelope_for(operation, base),
+        obstacles(source, stock, fixtures),
+        margin,
+    )
+
+
+def obstacles(source: Any, stock: Any = None, fixtures: Iterable[Any] = ()) -> List[Obstacle]:
+    """The part and the stock (both cuttable, part coordinates) plus fixture objects.
+
+    The CAM Job's own stock is deliberately not used: with one local model per
+    Setup its bounding box spans all the rotated clones, not the real stock.
+    """
     result = [Obstacle(source.Label, source.Shape, cuttable=True)]
-    stock = getattr(job, "Stock", None)
-    if stock is not None and getattr(stock, "Shape", None) is not None:
-        result.append(Obstacle("bruto", stock.Shape, cuttable=True))
+    if stock is not None:
+        result.append(Obstacle(stock.Label, stock.Shape, cuttable=True))
     result.extend(Obstacle(f.Label, f.Shape) for f in fixtures)
     return result

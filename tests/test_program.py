@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 from types import SimpleNamespace
@@ -138,3 +139,17 @@ def test_check_operation_reports_first_hit_in_part_coordinates():
     message = check_operation(check, commands, frame, 0.0, 0.0)
     assert message.startswith("en (10.0, 0.0, 0.0)") and "choque" in message
     assert check_operation(lambda *a: None, commands, frame, 0.0, 0.0) is None
+
+
+def test_path_points_tessellates_arcs():
+    from IndexedCAM.Core.path_endpoints import path_points
+
+    start = cmd("G0", X=10.0, Y=0.0, Z=0.0)
+    ccw = path_points([start, cmd("G3", X=-10.0, Y=0.0, I=-10.0, J=0.0)], step=2.0)
+    assert ccw[-1] == (-10.0, 0.0, 0.0) and len(ccw) > 10
+    assert all(abs(math.hypot(x, y) - 10.0) < 1e-9 for x, y, _ in ccw)
+    assert max(y for _, y, _ in ccw) > 9.9  # counter-clockwise goes over +Y
+    cw = path_points([start, cmd("G2", X=-10.0, Y=0.0, I=-10.0, J=0.0)], step=2.0)
+    assert min(y for _, y, _ in cw) < -9.9
+    helix = path_points([start, cmd("G3", X=-10.0, Y=0.0, Z=-4.0, I=-10.0, J=0.0)], step=2.0)
+    assert helix[-1][2] == -4.0 and helix[len(helix) // 2][2] < 0

@@ -169,6 +169,10 @@ class TransitionPlanner:
                 return "{}: B={:.1f}/C={:.1f} fuera de límites".format(
                     sample.phase, sample.b, sample.c
                 )
+            if not self._machine.tip_in_travel(sample.tip, sample.b, sample.c):
+                return "{} en ({:.1f}, {:.1f}, {:.1f}): fuera de la carrera lineal".format(
+                    sample.phase, *sample.tip
+                )
             hit = self._checker.collision(sample.tip, sample.b, sample.c)
             if hit:
                 return "{} en ({:.1f}, {:.1f}, {:.1f}): {}".format(sample.phase, *sample.tip, hit)

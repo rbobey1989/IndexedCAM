@@ -55,3 +55,30 @@ def test_dict_round_trip_and_defaults():
     assert Envelope.from_dict(env.to_dict()) == env
     assert Envelope.from_dict(None) == Envelope()
     assert Envelope.from_dict({"pivot_distance": 99}).pivot_distance == 99
+
+
+def test_cutting_length_splits_tool_into_flutes_and_shank():
+    env = Envelope().with_tool(5.0, 50.0, cutting_length=20.0, shank_radius=4.0)
+    poses = env.place((0, 0, 0), 0.0, 0.0)
+    assert [p.name for p in poses] == ["tool", "shank", "holder", "head"]
+    assert poses[0].end == pytest.approx((0, 0, 20.0))
+    assert (poses[1].radius, poses[1].end) == (4.0, pytest.approx((0, 0, 50.0)))
+    assert Envelope.from_dict(env.to_dict()) == env
+
+
+def test_cutting_length_covering_tool_keeps_single_cylinder():
+    env = Envelope().with_tool(5.0, 30.0, cutting_length=30.0)
+    assert [p.name for p in env.place((0, 0, 0), 0, 0)] == ["tool", "holder", "head"]
+    with pytest.raises(ValueError):
+        Envelope(cutting_length=0)
+
+
+def test_travel_box_limits_pivot():
+    from IndexedCAM.Machine.bc_machine import TravelBox
+
+    machine = BCMachine(travel=TravelBox((-100, -100, 0), (100, 100, 300)))
+    assert machine.tip_in_travel((0, 0, 100), 0, 0)  # pivot at z=220
+    assert not machine.tip_in_travel((0, 0, 200), 0, 0)  # pivot at z=320
+    assert BCMachine().tip_in_travel((1e6, 0, 0), 0, 0)
+    with pytest.raises(ValueError):
+        TravelBox((1, 0, 0), (0, 0, 0))

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from IndexedCAM.Machine.bc_head import Vector, bc_to_normal
 
-TOOL, HOLDER, HEAD = "tool", "holder", "head"
+TOOL, SHANK, HOLDER, HEAD = "tool", "shank", "holder", "head"
 
 
 def _positive(value: float, what: str) -> float:
@@ -54,9 +54,15 @@ class Envelope:
     holder: Cylinder = Cylinder(HOLDER, 20.0, 50.0)
     head: Cylinder = Cylinder(HEAD, 60.0, 150.0)
     pivot_distance: float = 120.0
+    cutting_length: Optional[float] = None
+    shank_radius: Optional[float] = None
 
     def __post_init__(self) -> None:
         _positive(self.pivot_distance, "pivot_distance")
+        if self.cutting_length is not None:
+            _positive(self.cutting_length, "cutting_length")
+        if self.shank_radius is not None:
+            _positive(self.shank_radius, "shank_radius")
 
     def cylinders(self) -> Tuple[Cylinder, Cylinder, Cylinder]:
         return (self.tool, self.holder, self.head)
@@ -66,18 +72,44 @@ class Envelope:
         """Length of the whole stack from the tip."""
         return sum(c.length for c in self.cylinders())
 
-    def with_tool(self, radius: float, length: float) -> "Envelope":
-        """Same machine with another cutting tool (e.g. from the CAM tool controller)."""
+    def with_tool(
+        self,
+        radius: float,
+        length: float,
+        cutting_length: Optional[float] = None,
+        shank_radius: Optional[float] = None,
+    ) -> "Envelope":
+        """Same machine with another tool (e.g. from the CAM tool controller).
+
+        ``cutting_length`` is the flute length from the tip; the rest of the
+        tool is shank (radius ``shank_radius``, default the tool radius), which
+        must never touch the material.
+        """
         return Envelope(
-            Cylinder(TOOL, radius, length), self.holder, self.head, self.pivot_distance
+            Cylinder(TOOL, radius, length),
+            self.holder,
+            self.head,
+            self.pivot_distance,
+            cutting_length,
+            shank_radius,
         )
+
+    def _stack(self) -> List[Cylinder]:
+        """Cylinders from the tip: cutting part, shank (if any), holder, head."""
+        cutting = self.cutting_length
+        if cutting is None or cutting >= self.tool.length:
+            return [self.tool, self.holder, self.head]
+        shank = Cylinder(
+            SHANK, self.shank_radius or self.tool.radius, self.tool.length - cutting
+        )
+        return [Cylinder(TOOL, self.tool.radius, cutting), shank, self.holder, self.head]
 
     def place(self, tip: Vector, b: float, c: float) -> List[CylinderPose]:
         """Cylinders for a tool tip at ``tip`` (part coordinates) and head angles B/C."""
         axis = bc_to_normal(b, c)
         poses: List[CylinderPose] = []
         offset = 0.0
-        for cylinder in self.cylinders():
+        for cylinder in self._stack():
             poses.append(
                 CylinderPose(
                     cylinder.name,
@@ -99,6 +131,8 @@ class Envelope:
             "holder": [self.holder.radius, self.holder.length],
             "head": [self.head.radius, self.head.length],
             "pivot_distance": self.pivot_distance,
+            "cutting_length": self.cutting_length,
+            "shank_radius": self.shank_radius,
         }
 
     @classmethod
@@ -119,6 +153,8 @@ class Envelope:
             part(HOLDER, base.holder),
             part(HEAD, base.head),
             float(data.get("pivot_distance", base.pivot_distance)),
+            data.get("cutting_length"),
+            data.get("shank_radius"),
         )
 
 

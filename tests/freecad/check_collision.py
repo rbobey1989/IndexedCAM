@@ -59,6 +59,28 @@ try:
     check(checker.collision((30, 20, 32), 90, 0) is not None,
           "horizontal tool grazing the top: holder/head collide")
 
+    flutes = PartCollisionChecker(
+        envelope.with_tool(5.0, 40.0, cutting_length=10.0), [part], margin=2.0
+    )
+    check(flutes.cutting_collision((30, 20, 25), 0, 0) is None,
+          "flutes above/inside the part, shank clear: free")
+    hit = flutes.cutting_collision((30, 20, 15), 0, 0)
+    check(hit is not None and "shank" in hit, "shank crossing the part collides: %s" % hit)
+
+    from IndexedCAM.Core.path_endpoints import path_points
+    from IndexedCAM.Machine.bc_machine import TravelBox
+
+    arc = [App.Placement()]  # keep import used
+    check(len(path_points([]) ) == 0, "empty path has no points")
+    limited = BCMachine(travel=TravelBox((-500, -500, -500), (500, 500, 150)))
+    sphere0 = SafetySphere.around((30, 20, 15), 40.0, envelope)
+    try:
+        TransitionPlanner(limited, checker, sphere0).plan(
+            Pose(0.0, 0.0, (30, 20, 60)), Pose(90.0, 0.0, (100, 20, 15)))
+        check(False, "linear travel limit must be enforced")
+    except TransitionError as error:
+        check("carrera lineal" in str(error), "travel limit reported: %s" % error)
+
     sphere = SafetySphere.around((30, 20, 15), 40.0, envelope)
     planner = TransitionPlanner(BCMachine(), checker, sphere)
     top = Pose(0.0, 0.0, (30, 20, 60))

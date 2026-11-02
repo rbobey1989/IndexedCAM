@@ -9,6 +9,8 @@ Vector = Tuple[float, float, float]
 Endpoints = Tuple[Vector, Vector]
 
 _MOVES = {"G0", "G00", "G1", "G01", "G2", "G02", "G3", "G03"}
+_ARCS = {"G2", "G02", "G3", "G03"}
+_CLOCKWISE = {"G2", "G02"}
 
 
 def path_endpoints(commands: Iterable[Any]) -> Optional[Endpoints]:
@@ -35,26 +37,63 @@ def path_endpoints(commands: Iterable[Any]) -> Optional[Endpoints]:
     return first, current
 
 
-def path_points(commands: Iterable[Any], step: float = 5.0) -> List[Vector]:
-    """Tool positions along a path, subdividing long moves to at most ``step`` mm.
+def _arc_points(
+    start: Vector, end: Vector, centre: Tuple[float, float], clockwise: bool, step: float
+) -> List[Vector]:
+    """Points along an XY arc (Z interpolated), ending exactly at ``end``."""
+    r_start = math.hypot(start[0] - centre[0], start[1] - centre[1])
+    a0 = math.atan2(start[1] - centre[1], start[0] - centre[0])
+    a1 = math.atan2(end[1] - centre[1], end[0] - centre[0])
+    sweep = a1 - a0
+    if clockwise and sweep >= 0:
+        sweep -= 2 * math.pi
+    elif not clockwise and sweep <= 0:
+        sweep += 2 * math.pi
+    count = max(1, math.ceil(abs(sweep) * r_start / step))
+    points: List[Vector] = []
+    for i in range(1, count):
+        t = i / count
+        angle = a0 + sweep * t
+        points.append(
+            (
+                centre[0] + r_start * math.cos(angle),
+                centre[1] + r_start * math.sin(angle),
+                start[2] + (end[2] - start[2]) * t,
+            )
+        )
+    points.append(end)
+    return points
 
-    Arcs are approximated by their end points; the first move starts from the
-    first complete position.
+
+def path_points(commands: Iterable[Any], step: float = 5.0) -> List[Vector]:
+    """Tool positions along a path, at most ``step`` mm apart.
+
+    Straight moves are subdivided; G2/G3 arcs (XY plane, I/J centre) are
+    tessellated. The first move starts from the first complete position.
     """
     if step <= 0:
         raise ValueError("step must be positive")
     position = {"X": 0.0, "Y": 0.0, "Z": 0.0}
     points: List[Vector] = []
     for command in commands:
-        if str(command.Name).upper() not in _MOVES:
+        name = str(command.Name).upper()
+        if name not in _MOVES:
             continue
         previous = (position["X"], position["Y"], position["Z"])
         for axis in position:
             if axis in command.Parameters:
                 position[axis] = float(command.Parameters[axis])
         current = (position["X"], position["Y"], position["Z"])
+        is_arc = name in _ARCS and ("I" in command.Parameters or "J" in command.Parameters)
+        if points and is_arc:
+            centre = (
+                previous[0] + float(command.Parameters.get("I", 0.0)),
+                previous[1] + float(command.Parameters.get("J", 0.0)),
+            )
+            points.extend(_arc_points(previous, current, centre, name in _CLOCKWISE, step))
+            continue
         if points:
-            length = sum((a - b) ** 2 for a, b in zip(previous, current)) ** 0.5
+            length = math.dist(previous, current)
             count = max(1, math.ceil(length / step))
             for i in range(1, count):
                 t = i / count

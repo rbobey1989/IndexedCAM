@@ -119,7 +119,13 @@ class CamBridge:
     def envelope_for(self, operation: Any, base: Envelope) -> Envelope:
         """``base`` with the cutting tool of the operation's CAM tool controller."""
         tool = operation.ToolController.Tool
-        return base.with_tool(float(tool.Diameter.Value) / 2.0, float(tool.Length.Value))
+        shank = getattr(tool, "ShankDiameter", None)
+        return base.with_tool(
+            float(tool.Diameter.Value) / 2.0,
+            float(tool.Length.Value),
+            float(tool.CuttingEdgeHeight.Value),
+            float(shank.Value) / 2.0 if shank is not None and shank.Value > 0 else None,
+        )
 
     def bound_steps(self, job: Any) -> List[Step]:
         """(Setup, operation) of every bound operation, in Job order."""

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 
 from IndexedCAM.Machine.bc_head import Vector, bc_to_normal
 from IndexedCAM.Machine.envelope import Envelope
@@ -36,12 +36,37 @@ class AxisLimits:
 
 
 @dataclass(frozen=True)
+class TravelBox:
+    """Linear axis travel (X, Y, Z min/max, mm) of the B pivot, in part coordinates.
+
+    The pivot is the point the linear axes move. Part coordinates are assumed
+    to coincide with machine coordinates (G54 at the part origin).
+    """
+
+    minimum: Vector
+    maximum: Vector
+
+    def __post_init__(self) -> None:
+        if not all(math.isfinite(v) for v in self.minimum + self.maximum):
+            raise ValueError("travel limits must be finite")
+        if any(lo > hi for lo, hi in zip(self.minimum, self.maximum)):
+            raise ValueError("travel minimum must not exceed maximum")
+
+    def contains(self, point: Vector, tolerance: float = 1e-9) -> bool:
+        return all(
+            lo - tolerance <= v <= hi + tolerance
+            for v, lo, hi in zip(point, self.minimum, self.maximum)
+        )
+
+
+@dataclass(frozen=True)
 class BCMachine:
     """Kinematic definition of a B+C head machine (3+2 indexed only)."""
 
     b_limits: AxisLimits = AxisLimits(0.0, 180.0)
     c_limits: AxisLimits = AxisLimits(-360.0, 360.0)
     envelope: Envelope = field(default_factory=Envelope)
+    travel: Optional[TravelBox] = None
 
     def is_reachable(self, b: float, c: float) -> bool:
         """Return True if both B and C are within the axis limits."""
@@ -65,6 +90,12 @@ class BCMachine:
                     c, self.c_limits.minimum, self.c_limits.maximum
                 )
             )
+
+    def tip_in_travel(self, tip: Vector, b: float, c: float) -> bool:
+        """True if the B pivot for this tool tip stays inside the linear travel."""
+        if self.travel is None:
+            return True
+        return self.travel.contains(self.envelope.pivot(tip, b, c))
 
     def tool_vector(self, b: float, c: float) -> Vector:
         """Unit tool-axis direction in machine coordinates for valid B and C."""

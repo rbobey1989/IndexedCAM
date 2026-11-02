@@ -149,6 +149,15 @@ try:
 
     env = bridge.envelope_for(op1, Envelope())
     check((env.tool.radius, env.tool.length) == (2.5, 50.0), "envelope takes the CAM tool size")
+    check(env.cutting_length == 30.0 and [p.name for p in env.place((0, 0, 0), 0, 0)][:2] == ["tool", "shank"],
+          "envelope separates flutes (CuttingEdgeHeight) and shank")
+    from IndexedCAM.Core.collision_checker import checker_for_operation, check_operation
+
+    checker = checker_for_operation(bridge, box, op1, Envelope(), margin=1.0)
+    frame = manager.get("Lateral X").local_frame()
+    result = check_operation(checker.cutting_collision, op1.Path.Commands, frame, 90.0, 0.0)
+    check(result is None, "facing the side with the real tool is collision-free: %s" % result)
+    check(len(checker._obstacles) == 1, "checker built from the part only")
     program.move(third.operation.Name, 0)
     check(program.steps()[0].operation == third.operation.Name, "program can be reordered")
 

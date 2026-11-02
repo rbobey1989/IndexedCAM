@@ -149,3 +149,11 @@ def test_plan_program_only_where_needed():
 def test_invalid_steps():
     with pytest.raises(ValueError):
         planner(angle_step=0)
+
+
+def test_travel_limit_makes_transition_fail():
+    from IndexedCAM.Machine.bc_machine import TravelBox
+
+    tight = BCMachine(travel=TravelBox((-1000, -1000, -1000), (1000, 1000, 100)))
+    with pytest.raises(TransitionError, match="carrera lineal"):
+        planner(machine=tight).plan(Pose(0, 0, (0, 0, 130)), Pose(90.0, 0, (130, 0, 0)))

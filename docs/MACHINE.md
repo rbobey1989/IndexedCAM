@@ -36,3 +36,5 @@ Alinear el eje Z de la herramienta con la normal de la cara seleccionada.
 - `Envelope.place(punta, B, C)` devuelve los cilindros (eje inicio→fin) en coordenadas de pieza; `pivot(...)` la posición del pivote.
 - `Envelope.with_tool(radio, largo)` sustituye la herramienta; `CamBridge.envelope_for(operación, base)` la toma del controlador de herramienta de CAM (Diameter/2 y Length).
 - `to_dict`/`from_dict` para guardar la definición. Lo usarán el planificador de transiciones (#16) y el comprobador de colisiones (#17).
+
+Ampliación: `Envelope.with_tool(radio, largo, cutting_length, shank_radius)` separa la parte cortante del vástago (`CuttingEdgeHeight` y `ShankDiameter` del CAM) y `BCMachine.travel` (`TravelBox`) define la carrera lineal del pivote.
