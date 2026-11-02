@@ -17,6 +17,7 @@ from IndexedCAM.Core.face_orientation import (
     extract_face,
 )
 from IndexedCAM.Core.indexed_setup import IndexedSetup
+from IndexedCAM.Commands.transaction import DocumentTransaction
 from IndexedCAM.Core.setup_manager import SetupManager
 
 COMMAND_NAME = "IndexedCAM_FaceOrientation"
@@ -76,24 +77,6 @@ def _ask_name_dialog(orientation: FaceOrientation, default_name: str) -> Optiona
     return name if accepted else None
 
 
-class _DocumentTransaction:
-    """Undoable document transaction (aborted if the block raises)."""
-
-    def __init__(self, document: Any, label: str) -> None:
-        self._document = document
-        self._label = label
-
-    def __enter__(self) -> "_DocumentTransaction":
-        self._document.openTransaction(self._label)
-        return self
-
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        if exc_type is None:
-            self._document.commitTransaction()
-        else:
-            self._document.abortTransaction()
-
-
 _triad: Any = None
 
 
@@ -140,7 +123,7 @@ class FaceOrientationCommand:
                 SetupManager(DocumentStorage(document)),
                 _shared_triad(),
                 _ask_name_dialog,
-                lambda: _DocumentTransaction(document, "Create indexed setup"),
+                lambda: DocumentTransaction(document, "Create indexed setup"),
             )
             setup = workflow.run(Gui.Selection.getSelectionEx())
         except ValueError as error:

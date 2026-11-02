@@ -163,3 +163,21 @@ INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
   /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_cam_bridge.py
 cat /tmp/bridge.log
 ```
+
+## Comando Assign Operation (#13)
+
+Prueba manual (flujo completo):
+
+1. Banco **IndexedCAM**, selecciona una cara y pulsa **Face Orientation** (nombre p. ej. `Lateral X`).
+2. Repite con otra cara (otro Setup).
+3. Pulsa **Assign Operation**: elige el Setup y el tipo de operación (Face, Pocket Shape, Profile, Adaptive).
+4. Se abre el panel nativo de CAM con la cara del Setup ya como base. Acepta con OK; con Cancel la operación se elimina.
+5. Cambia al banco **CAM**: hay un único Job con las operaciones de todos los Setups; cada trayectoria está en el sistema local de su Setup (cara en Z=0).
+
+Comprobación automática dentro de FreeCAD (el log termina en `PASS`):
+
+```bash
+INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/assign.log \
+  /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_assign_operation.py
+cat /tmp/assign.log
+```

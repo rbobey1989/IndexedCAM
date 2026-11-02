@@ -43,12 +43,32 @@ class CamBridge:
         job = self.find_job()
         if job is not None:
             return job
-        from Path.Main import Job
-
-        job = Job.Create(JOB_NAME, [source])
+        job = self._create_job(source)
+        job.Label = JOB_NAME
         job.addProperty("App::PropertyBool", JOB_MARKER, "IndexedCAM", "IndexedCAM Job")
         setattr(job, JOB_MARKER, True)
         self._document.recompute()
+        return job
+
+    def _create_job(self, source: Any) -> Any:
+        """Create the Job through CAM's GUI command when a GUI is running.
+
+        The GUI path also attaches the Job's view provider, which the CAM
+        operation panels need; the plain API path is used headless.
+        """
+        import FreeCAD
+
+        if FreeCAD.GuiUp:
+            from Path.Main.Gui import Job as JobGui
+
+            FreeCAD.setActiveDocument(self._document.Name)
+            job = JobGui.Create([source], openTaskPanel=False)
+        else:
+            from Path.Main import Job
+
+            job = Job.Create("Job", [source])
+        if job is None:
+            raise CamBridgeError("CAM could not create the Job")
         return job
 
     def attach_setup(self, job: Any, source: Any, setup: IndexedSetup) -> Any:

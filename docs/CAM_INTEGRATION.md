@@ -68,6 +68,14 @@ Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente
 - Alternativa descartada: un Job por Setup (multiplica Jobs, herramientas y hojas de configuración). También se descartan varios `Fixtures` (repiten todas las operaciones) y parchear operaciones CAM.
 - Verificado: `Adaptive` y `Pocket` funcionan sobre el clon local; al editar el modelo original el clon se actualiza solo; 4 clones de una pieza de 150 caras recalculan en ~1 s. Los dressups (Boundary, Tags…) no se han probado todavía.
 
+### Hallazgos de la implementación (#12, #13)
+
+- El panel nativo de una operación nueva **vacía su `Base` y la rellena con la selección de la vista**. El comando selecciona por código la cara del clon local justo antes de abrir el panel.
+- El panel necesita el *view provider* del Job. Un Job creado solo con la API (`Path.Main.Job.Create`) hace fallar `accept()`; con GUI se crea con `Path.Main.Gui.Job.Create(..., openTaskPanel=False)`.
+- Al cancelar el panel CAM borra la operación, por eso `IndexedSetup.operations` se sincroniza desde el Job (propiedad `IndexedSetup` de cada operación) y no se edita al crearla.
+- La cara del Setup queda en Z=0 local y el centro de la cara en el origen XY del WCS.
+- Limitación: se asume un objeto de primer nivel (no dentro de un Body/Part con Placement propio).
+
 ## Flujo de usuario
 
 1. Seleccionar una cara → **Face Orientation** (ya implementado): B/C, triada y Setup.

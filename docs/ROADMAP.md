@@ -15,7 +15,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 8 | #9 | Comando "Face Orientation" + registro del Workbench (`InitGui.py`) | Hecha |
 | 9 | #11 | Investigación de integración con CAM (sin tocar el core): ver [CAM_INTEGRATION.md](CAM_INTEGRATION.md) | Hecha |
 | 10 | #12 | Puente Setup ↔ Job CAM (Job único, clon local por Setup, alturas por operación) | Hecha |
-| 11 | #13 | Comando "Asignar operación" tras Face Orientation | Pendiente |
+| 11 | #13 | Comando "Asignar operación" tras Face Orientation | Hecha |
 | 12 | #14 | Programa: secuencia de pasos encadenados | Pendiente |
 | 13 | #15 | Envolvente de herramienta/cabezal en la máquina | Pendiente |
 | 14 | #16 | `TransitionPlanner` (retirada, giro, aproximación) | Pendiente |
