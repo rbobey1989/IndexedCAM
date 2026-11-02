@@ -39,10 +39,33 @@ Reglas derivadas:
 
 - Toda operación debe llevar `Base` explícito (cara del clon de su Setup); una operación sin Base usaría todos los clones superpuestos.
 - Los clones se ocultan en la vista; el modelo original sigue siendo el visible.
+
+### Clones ligeros (`LocalModel`)
+
+Un clon por Setup no debe pesar ni en memoria, ni en el archivo, ni en la recomputación. Medido en FreeCAD 1.1.4 con una pieza de 144 taladros y 4 clones:
+
+| Variante | Tamaño `.FCStd` |
+| --- | --- |
+| Sin clones | 24 KB |
+| Clones con `Shape` guardado (copia o compartido) | 105 KB (cada clon guarda su BREP) |
+| **`LocalModel` con `Shape` transitorio** (2 clones, pieza simple) | 31 KB |
+
+Diseño adoptado:
+
+- `LocalModel` es un `Part::FeaturePython` con un proxy del addon y propiedades `Source` (enlace al modelo) y `Normal`/Setup.
+- `execute`: `shape = Source.Shape.copy(False)` (**comparte la geometría**, no la duplica), `obj.Shape = shape` y `obj.Placement = rotación del Setup` (hay que fijar el `Placement` del objeto; poner la rotación en el `Shape` no basta).
+- `Shape` se marca `Transient`: **no se guarda en el archivo**. Al cargar, `onDocumentRestored` hace `touch()` y el clon se reconstruye al recalcular.
+- Memoria: una única geometría compartida por todos los clones; solo cambia la ubicación.
+- Los clones dependen de `Source`, así que siguen los cambios paramétricos del modelo sin sincronización manual (resuelve el riesgo abierto de sincronización).
+- Verificado: dos clones en un Job, una `MillFace` por clon con alturas propias → OpA (cara +X) Z=60, OpB (cara +Y) Z=40; guardar, reabrir y recalcular restaura clones y trayectorias.
+
+Descartado: `App::Link` como modelo (el Job lo acepta pero crea su propio clon interno, sin ahorro) y clones con `Shape` persistente (archivo proporcional al número de Setups).
+
+Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente la cara del Setup) para operaciones 2.5D en piezas muy pesadas; las operaciones 3D requieren el modelo completo.
 - La relación operación → Setup se guarda en `IndexedSetup.operations` (y la inversa en el programa), sin tocar propiedades del Job.
 - El orden de salida lo define el programa de IndexedCAM, no `Job.Fixtures` ni `OrderOutputBy`.
 - Alternativa descartada: un Job por Setup (multiplica Jobs, herramientas y hojas de configuración). También se descartan varios `Fixtures` (repiten todas las operaciones) y parchear operaciones CAM.
-- Pendiente de verificar: sincronización del clon con el original y operaciones que usan el bruto (Adaptive, dressups).
+- Pendiente de verificar: operaciones que usan el bruto (Adaptive, dressups) y el comportamiento al editar el modelo original.
 
 ## Flujo de usuario
 
@@ -99,7 +122,7 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 
 ## Riesgos abiertos
 
-- Sincronización de los clones con el modelo original.
+- Rendimiento de recomputación con modelos muy pesados (mitigación: modo "solo caras").
 - Forma real de herramienta/portaherramientas: las toolbits de CAM pueden traer `Shape`; si no, se usa cilindro/cono simplificado.
 - Signos, ceros y pivote reales por máquina.
 - Operaciones 3D (Surface/Waterline) con cabezal inclinado exigen comprobación de colisión dentro de la operación.
