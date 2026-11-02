@@ -1,7 +1,7 @@
 """B+C head machine definition: axis limits, convention and tool vector.
 
 Convention (see ``bc_head``): R = Rz(C) @ Ry(B); the tool axis is R @ (0, 0, 1).
-Angles are degrees. B tilts the head, C rotates around Z. Real controllers may
+Angles are degrees. B tilts the head (0 = vertical, 90 = horizontal), C rotates around Z. Real controllers may
 use other signs, zeros or axis order; adapt this definition per machine.
 """
 
@@ -38,7 +38,7 @@ class AxisLimits:
 class BCMachine:
     """Kinematic definition of a B+C head machine (3+2 indexed only)."""
 
-    b_limits: AxisLimits = AxisLimits(-90.0, 90.0)
+    b_limits: AxisLimits = AxisLimits(0.0, 180.0)
     c_limits: AxisLimits = AxisLimits(-360.0, 360.0)
 
     def is_reachable(self, b: float, c: float) -> bool:

@@ -32,8 +32,18 @@ def test_solution_aligns_tool_and_is_reachable():
         assert verify_solution(normal, angles)
 
 
-def test_alternative_solution_with_negative_b():
+SYMMETRIC = BCMachine(b_limits=AxisLimits(-90, 90))
+
+
+def test_default_machine_has_no_negative_b_solution():
     solution = OrientationSolver().solve((1, 0, 1))
+    assert solution.angles.b == pytest.approx(45)
+    assert solution.angles.c == pytest.approx(0)
+    assert all(a.b >= 0 and a.c % 360 == 0 for a in solution.alternatives)
+
+
+def test_alternative_solution_with_negative_b():
+    solution = OrientationSolver(SYMMETRIC).solve((1, 0, 1))
     assert solution.angles.b == pytest.approx(45)
     assert solution.angles.c == pytest.approx(0)
     assert any(
@@ -44,20 +54,27 @@ def test_alternative_solution_with_negative_b():
 
 def test_previous_selects_nearest_c():
     previous = BCAngles(-45, 180)
-    angles = OrientationSolver().solve((1, 0, 1), previous=previous).angles
+    angles = OrientationSolver(SYMMETRIC).solve((1, 0, 1), previous=previous).angles
     assert angles.b == pytest.approx(-45)
     assert angles.c == pytest.approx(180)
 
 
-def test_downward_normal_is_unreachable():
+def test_downward_normal_reachable_with_b_above_90():
+    angles = OrientationSolver().solve((0, 0, -1)).angles
+    assert angles.b == pytest.approx(180)
+    assert OrientationSolver().solve((1, 0, -1)).angles.b == pytest.approx(135)
+
+
+def test_downward_normal_unreachable_when_b_limited_to_90():
+    machine = BCMachine(b_limits=AxisLimits(0, 90))
     with pytest.raises(UnreachableOrientationError):
-        OrientationSolver().solve((0, 0, -1))
+        OrientationSolver(machine).solve((0, 0, -1))
     with pytest.raises(UnreachableOrientationError):
-        OrientationSolver().solve((1, 0, -1))
+        OrientationSolver(SYMMETRIC).solve((1, 0, -1))
 
 
 def test_horizontal_normal_reachable_both_ways():
-    solution = OrientationSolver().solve((-1, 0, 0))
+    solution = OrientationSolver(SYMMETRIC).solve((-1, 0, 0))
     assert solution.angles.b == pytest.approx(90)
     assert any(a.b == pytest.approx(-90) for a in solution.alternatives)
 
@@ -69,12 +86,12 @@ def test_singularity_keeps_previous_c():
 
 
 def test_c_limits_filter_candidates():
-    machine = BCMachine(c_limits=AxisLimits(-90, 90))
+    machine = BCMachine(b_limits=AxisLimits(-90, 90), c_limits=AxisLimits(-90, 90))
     angles = OrientationSolver(machine).solve((-1, 0, 1)).angles
     assert angles.b == pytest.approx(-45)
     assert angles.c == pytest.approx(0)
     with pytest.raises(UnreachableOrientationError):
-        OrientationSolver(BCMachine(c_limits=AxisLimits(0, 10))).solve((0, -1, 1))
+        OrientationSolver(BCMachine(b_limits=AxisLimits(-90, 90), c_limits=AxisLimits(0, 10))).solve((0, -1, 1))
 
 
 @pytest.mark.parametrize("bad", [(0, 0, 0), (math.nan, 0, 1), (1, 2)])

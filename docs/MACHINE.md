@@ -8,7 +8,7 @@ Cabezal B + C.
 
 | Eje | Rango |
 | --- | --- |
-| B | −90° a +90° |
+| B | 0° a +180° |
 | C | −360° a +360° |
 
 ## Vector de herramienta
@@ -22,7 +22,7 @@ Alinear el eje Z de la herramienta con la normal de la cara seleccionada.
 ## Implementación (`IndexedCAM/Machine/bc_machine.py`)
 
 - `AxisLimits(minimum, maximum)`: intervalo cerrado en grados; rechaza valores no finitos o invertidos.
-- `BCMachine(b_limits=(-90, 90), c_limits=(-360, 360))`:
+- `BCMachine(b_limits=(0, 180), c_limits=(-360, 360))`:
   - `is_reachable(b, c)` / `validate(b, c)`: comprueban límites (`validate` lanza `ValueError` indicando el eje).
   - `tool_vector(b, c)`: dirección unitaria del eje de herramienta, `(sin B cos C, sin B sin C, cos B)`.
   - `rotation_matrix(b, c)`: `Rz(C) @ Ry(B)`; su tercera columna es el vector de herramienta.

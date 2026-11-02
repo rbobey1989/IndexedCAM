@@ -29,11 +29,11 @@ Tests: `python -m pytest tests`.
 
 ## Orientación alcanzable (`IndexedCAM/Core/orientation_solver.py`)
 
-Decisión: la máquina usa **B∈[−90, 90]** (inclinación simétrica; B=0 es herramienta vertical) y C∈[−360, 360]. El rango B∈[0,180] del solver puro es solo la salida matemática de `acos`.
+Decisión: la máquina usa por defecto **B∈[0, 180]** (B=0 herramienta vertical, 90 horizontal, >90 apuntando hacia arriba) y C∈[−360, 360], coherente con la salida del solver puro. Los límites son configurables (`AxisLimits`); p. ej. `AxisLimits(0, 90)` si el cabezal no pasa de la horizontal, o `AxisLimits(-90, 90)` para un cabezal simétrico.
 
 `OrientationSolver(machine).solve(normal, previous=None)` genera las dos familias equivalentes, `(B, C+360k)` y `(−B, C+180+360k)`, descarta las que violan los límites y elige:
 
 - con `previous`: la de menor recorrido en C y luego en B;
 - sin `previous`: B ≥ 0 y menor |C|.
 
-Devuelve `OrientationSolution(angles, alternatives)`. Una normal con `nz < 0` (cara orientada hacia abajo, p. ej. socavado) lanza `UnreachableOrientationError`, subclase de `ValueError`. En la singularidad (normal ∥ Z) se conserva el C de `previous`.
+Devuelve `OrientationSolution(angles, alternatives)`. Una normal con `nz < 0` (cara hacia abajo, p. ej. socavado) solo es alcanzable si B admite valores >90°; si no, lanza `UnreachableOrientationError`, subclase de `ValueError`. En la singularidad (normal ∥ Z) se conserva el C de `previous`.
