@@ -9,8 +9,19 @@ class IndexedCAMWorkbench(Gui.Workbench):
     MenuText = "IndexedCAM"
     ToolTip = "Indexed 3+2 machining workbench"
 
+    def __init__(self):
+        # FreeCAD execs this file with separate globals/locals: import here.
+        from IndexedCAM.Gui.resources import icon_path
+
+        self.__class__.Icon = icon_path("indexedcam.svg")
+
     def Initialize(self):
-        pass
+        from IndexedCAM.Commands import face_orientation
+
+        face_orientation.register()
+        commands = [face_orientation.COMMAND_NAME]
+        self.appendToolbar("IndexedCAM", commands)
+        self.appendMenu("IndexedCAM", commands)
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"

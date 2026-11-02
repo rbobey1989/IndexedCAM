@@ -143,3 +143,13 @@ triad.clear()   # la retira de la vista 3D
 ```
 
 Ejes: X rojo, Y verde, Z azul (eje de herramienta, apunta a la normal de la cara). La triada es solo un nodo Coin3D de la vista: no se guarda en el documento ni lo modifica. `show` reemplaza la triada anterior de esa instancia de `TriadView`.
+
+## Comando Face Orientation
+
+1. Reinicia FreeCAD y elige el banco **IndexedCAM**.
+2. Selecciona una única cara en la vista 3D.
+3. Pulsa **Face Orientation** (barra de herramientas o menú IndexedCAM).
+4. Se muestra la triada local con B/C calculados; introduce el nombre del Setup (cancelar descarta la triada).
+5. El Setup se guarda en el documento. `Ctrl+Z` lo deshace y `Ctrl+Y` lo rehace.
+
+Sin selección válida aparece un aviso.

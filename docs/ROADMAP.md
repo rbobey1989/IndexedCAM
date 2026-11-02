@@ -12,7 +12,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 5 | #4 | Modelo `Setup` (nombre, normal, WCS, B, C, operaciones, metadatos) | Hecha |
 | 6 | #7 (#8 cerrada como duplicada) | `SetupManager`: crear/renombrar/borrar/ordenar en el documento | Hecha |
 | 7 | #5 | Triada XYZ local con Coin3D | Hecha |
-| 8 | #9 | Comando "Face Orientation" + registro del Workbench (`InitGui.py`) | Pendiente |
+| 8 | #9 | Comando "Face Orientation" + registro del Workbench (`InitGui.py`) | Hecha |
 | 9 | #11 | Investigación de integración con CAM (sin tocar el core) | Pendiente |
 
 ## Decisiones
