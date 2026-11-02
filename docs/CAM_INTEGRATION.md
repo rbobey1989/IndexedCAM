@@ -137,3 +137,7 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 - Forma real de herramienta/portaherramientas: las toolbits de CAM pueden traer `Shape`; si no, se usa cilindro/cono simplificado.
 - Signos, ceros y pivote reales por máquina.
 - Operaciones 3D (Surface/Waterline) con cabezal inclinado exigen comprobación de colisión dentro de la operación.
+
+## Estado de la planificación (#16)
+
+`Core/transition_planner.py` implementa los pasos 1–6 anteriores con un `CollisionChecker` inyectable (`collision(punta, B, C) -> Optional[str]`; la implementación con `Part` es #17). Alternativas, por este orden: equivalentes del solver más cercanos primero (C±360°, y (−B, C+180°) si la máquina admite B negativo) y después esfera 1.5× mayor. Muestreo: ≤2° en B/C y 5 mm en tramos lineales. Sin alternativa válida lanza `TransitionError` con la fase, la posición y el obstáculo; nunca devuelve una transición sin validar.
