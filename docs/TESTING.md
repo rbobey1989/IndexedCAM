@@ -128,3 +128,18 @@ print(manager.names())
 ```
 
 Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con `SetupManager(DocumentStorage(FreeCAD.ActiveDocument))`. Aparecen como el objeto `IndexedCAM_Setups` en el árbol.
+
+## Mostrar la triada local de un Setup
+
+Con el `setup` y el `analysis` de las secciones anteriores:
+
+```python
+from IndexedCAM.Gui.triad import TriadView, suggested_size
+
+triad = TriadView()
+triad.show(setup.local_frame(), suggested_size(analysis.area))
+# ...
+triad.clear()   # la retira de la vista 3D
+```
+
+Ejes: X rojo, Y verde, Z azul (eje de herramienta, apunta a la normal de la cara). La triada es solo un nodo Coin3D de la vista: no se guarda en el documento ni lo modifica. `show` reemplaza la triada anterior de esa instancia de `TriadView`.
