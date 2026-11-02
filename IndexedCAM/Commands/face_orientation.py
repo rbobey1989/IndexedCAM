@@ -66,15 +66,27 @@ class FaceOrientationWorkflow:
         return setup
 
 
-def _ask_name_dialog(orientation: FaceOrientation, default_name: str) -> Optional[str]:
+def _ask_name_dialog(
+    orientation: FaceOrientation,
+    default_name: str,
+    name_error: Callable[[str], str] = lambda name: "",
+) -> Optional[str]:
+    """Ask for the Setup name, re-asking until it is valid or cancelled."""
     import FreeCADGui as Gui
     from PySide import QtWidgets
 
     label = describe(orientation) + "\n\nNombre del nuevo setup:"
-    name, accepted = QtWidgets.QInputDialog.getText(
-        Gui.getMainWindow(), DIALOG_TITLE, label, text=default_name
-    )
-    return name if accepted else None
+    name = default_name
+    while True:
+        name, accepted = QtWidgets.QInputDialog.getText(
+            Gui.getMainWindow(), DIALOG_TITLE, label, text=name
+        )
+        if not accepted:
+            return None
+        error = name_error(name)
+        if not error:
+            return name.strip()
+        QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, error)
 
 
 _triad: Any = None
@@ -118,11 +130,14 @@ class FaceOrientationCommand:
 
         document = FreeCAD.ActiveDocument
         try:
+            manager = SetupManager(DocumentStorage(document))
             workflow = FaceOrientationWorkflow(
                 FaceOrientationService(),
-                SetupManager(DocumentStorage(document)),
+                manager,
                 _shared_triad(),
-                _ask_name_dialog,
+                lambda orientation, default: _ask_name_dialog(
+                    orientation, default, manager.name_error
+                ),
                 lambda: DocumentTransaction(document, "Create indexed setup"),
             )
             setup = workflow.run(Gui.Selection.getSelectionEx())

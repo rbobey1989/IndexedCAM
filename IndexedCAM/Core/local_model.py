@@ -68,6 +68,12 @@ def update(obj: Any, setup: IndexedSetup) -> None:
     obj.touch()
 
 
+def rename(obj: Any, new_name: str) -> None:
+    """Point the local model at the renamed Setup (the object Name is kept)."""
+    obj.SetupName = new_name
+    obj.Label = OBJECT_PREFIX + new_name
+
+
 def create(document: Any, source: Any, setup: IndexedSetup) -> Any:
     """Create the local model of ``setup`` following ``source``."""
     obj = document.addObject("Part::FeaturePython", OBJECT_PREFIX + setup.name)

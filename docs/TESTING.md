@@ -181,3 +181,9 @@ INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/assign.log \
   /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_assign_operation.py
 cat /tmp/assign.log
 ```
+
+## Nombre y renombrado de Setups
+
+- **Face Orientation** pide el nombre al crear el Setup (por defecto `Setup`, `Setup 2`…). Un nombre vacío o repetido se rechaza con un aviso y se vuelve a preguntar.
+- **Rename Setup**: elige el Setup y escribe el nuevo nombre (el botón OK se desactiva si es inválido). Se actualizan, en una sola transacción deshacible (Ctrl+Z), el Setup guardado, la etiqueta de su modelo local (`IndexedCAM_Local_<nombre>`) y la propiedad `IndexedSetup` de todas sus operaciones CAM. Los nombres internos de objeto no cambian, así que las expresiones y los enlaces de CAM siguen válidos.
+- `tests/freecad/check_assign_operation.py` comprueba el renombrado y su persistencia tras guardar y reabrir.

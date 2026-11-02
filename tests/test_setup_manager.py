@@ -159,3 +159,12 @@ def test_document_storage_rejects_non_list():
     setattr(doc.objects[CONTAINER_NAME], PROPERTY_NAME, "{}")
     with pytest.raises(ValueError, match="list"):
         storage.load()
+
+
+def test_name_error_rules(manager):
+    assert manager.name_error("Nuevo") == ""
+    assert "vacío" in manager.name_error("   ")
+    assert "Ya existe" in manager.name_error("a")
+    assert manager.name_error("B", renaming="B") == "El nombre es el mismo."
+    assert manager.name_error("b", renaming="B") == ""
+    assert "Ya existe" in manager.name_error("A", renaming="B")

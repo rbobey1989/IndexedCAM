@@ -99,6 +99,21 @@ class CamBridge:
             job.Model.removeObject(model)
         self._document.removeObject(model.Name)
 
+    def rename_setup(self, old: str, new: str) -> None:
+        """Follow a Setup rename: its local model and every operation bound to it.
+
+        Object names stay (expressions and CAM refer to them); only the owning
+        Setup name and the visible label change.
+        """
+        model = local_model.find(self._document, old)
+        if model is not None:
+            local_model.rename(model, new)
+        job = self.find_job()
+        if job is not None:
+            for operation in self.operations_of(job, old):
+                setattr(operation, OPERATION_SETUP_PROPERTY, new)
+        self._document.recompute()
+
     def operations_of(self, job: Any, setup_name: str) -> List[Any]:
         return [
             op

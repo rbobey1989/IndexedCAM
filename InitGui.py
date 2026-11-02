@@ -16,11 +16,16 @@ class IndexedCAMWorkbench(Gui.Workbench):
         self.__class__.Icon = icon_path("indexedcam.svg")
 
     def Initialize(self):
-        from IndexedCAM.Commands import assign_operation, face_orientation
+        from IndexedCAM.Commands import assign_operation, face_orientation, rename_setup
 
         face_orientation.register()
         assign_operation.register()
-        commands = [face_orientation.COMMAND_NAME, assign_operation.COMMAND_NAME]
+        rename_setup.register()
+        commands = [
+            face_orientation.COMMAND_NAME,
+            assign_operation.COMMAND_NAME,
+            rename_setup.COMMAND_NAME,
+        ]
         self.appendToolbar("IndexedCAM", commands)
         self.appendMenu("IndexedCAM", commands)
 

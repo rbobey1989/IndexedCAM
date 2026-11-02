@@ -127,9 +127,35 @@ try:
     assign_operation_wf.run()
     check(len(manager.get("Superior").operations) == 1, "cancelled operation pruned from Setup")
 
+    # renaming propagates to the local model and the operations
+    from IndexedCAM.Commands import rename_setup
+
+    rename_setup.register()
+    check(rename_setup.COMMAND_NAME in Gui.listCommands(), "rename command registered")
+    ops_before = [o.Name for o in bridge.operations_of(job, "Lateral X")]
+    renamed = rename_setup.RenameSetupWorkflow(
+        manager, bridge, lambda setups, err: ("Lateral X", "Cara Lateral"),
+        lambda: DocumentTransaction(doc, "Rename indexed setup"),
+    ).run()
+    check(renamed.name == "Cara Lateral" and "Lateral X" not in manager, "Setup renamed")
+    model = local_model.find(doc, "Cara Lateral")
+    check(model is not None and local_model.find(doc, "Lateral X") is None, "local model follows")
+    check(model.Label == "IndexedCAM_Local_Cara Lateral", "local model label updated")
+    check([o.Name for o in bridge.operations_of(job, "Cara Lateral")] == ops_before,
+          "operations follow the new name")
+    check(op1.Base[0][0] is model and len(op1.Path.Commands) > 0, "operation still bound and valid")
+    check(manager.get("Cara Lateral").operations == ops_before, "Setup.operations unchanged")
+
     path = os.path.join(tempfile.gettempdir(), "assign_check.FCStd")
     doc.saveAs(path)
     check(os.path.getsize(path) < 150000, "file size small: %d bytes" % os.path.getsize(path))
+    App.closeDocument(doc.Name)
+    reopened = App.openDocument(path)
+    reopened_manager = SetupManager(DocumentStorage(reopened))
+    check("Cara Lateral" in reopened_manager, "renamed Setup survives save/reload")
+    check(local_model.find(reopened, "Cara Lateral") is not None, "local model survives reload")
+    check(len(CamBridge(reopened).operations_of(CamBridge(reopened).find_job(), "Cara Lateral")) == 2,
+          "operations keep the new name after reload")
     log("PASS")
 except Exception:
     log(traceback.format_exc())

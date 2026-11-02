@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Protocol, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 
@@ -58,6 +58,22 @@ class SetupManager:
             if setup.name.casefold() == key:
                 return i
         raise KeyError("setup not found: {}".format(name))
+
+    def name_error(self, name: str, renaming: Optional[str] = None) -> str:
+        """Why ``name`` cannot be used for a Setup ("" if it can).
+
+        ``renaming`` is the current name of the Setup being renamed: it may
+        change only its capitalization, but not collide with another Setup.
+        """
+        candidate = name.strip()
+        if not candidate:
+            return "El nombre no puede estar vacío."
+        if renaming is not None and candidate == renaming.strip():
+            return "El nombre es el mismo."
+        own = renaming.strip().casefold() if renaming is not None else None
+        if candidate in self and candidate.casefold() != own:
+            return "Ya existe un setup llamado '{}'.".format(candidate)
+        return ""
 
     def names(self) -> List[str]:
         return [s.name for s in self._setups]
