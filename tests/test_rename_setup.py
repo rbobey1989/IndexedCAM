@@ -81,3 +81,14 @@ def test_failure_inside_transaction_aborts():
     with pytest.raises(RuntimeError):
         workflow.run()
     assert events == ["open", "abort"]
+
+
+def test_rename_also_updates_program():
+    from IndexedCAM.Core.program import MemoryProgramStorage, Program, Step
+
+    program = Program(MemoryProgramStorage())
+    program.add(Step("A", "op1"))
+    manager = SetupManager(MemoryStorage())
+    manager.add(IndexedSetup(name="A", normal=(0, 0, 1), b=0, c=0))
+    RenameSetupWorkflow(manager, Renamer(), lambda s, e: ("A", "Z"), None, program).run()
+    assert program.steps() == [Step("Z", "op1")]

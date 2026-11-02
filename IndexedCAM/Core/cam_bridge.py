@@ -12,6 +12,7 @@ from typing import Any, List, Optional
 from IndexedCAM.Core import local_model
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
+from IndexedCAM.Core.program import Step
 
 JOB_MARKER = "IndexedCAMJob"
 OPERATION_SETUP_PROPERTY = "IndexedSetup"
@@ -113,6 +114,14 @@ class CamBridge:
             for operation in self.operations_of(job, old):
                 setattr(operation, OPERATION_SETUP_PROPERTY, new)
         self._document.recompute()
+
+    def bound_steps(self, job: Any) -> List[Step]:
+        """(Setup, operation) of every bound operation, in Job order."""
+        return [
+            Step(getattr(op, OPERATION_SETUP_PROPERTY), op.Name)
+            for op in job.Operations.Group
+            if getattr(op, OPERATION_SETUP_PROPERTY, None)
+        ]
 
     def operations_of(self, job: Any, setup_name: str) -> List[Any]:
         return [

@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Mapping, Sequence
 
 CONTAINER_NAME = "IndexedCAM_Setups"
 PROPERTY_NAME = "SetupsJson"
+PROGRAM_CONTAINER_NAME = "IndexedCAM_Program"
+PROGRAM_PROPERTY_NAME = "StepsJson"
 
 
 class DocumentStorage:
@@ -16,17 +18,20 @@ class DocumentStorage:
     opening or analyzing a document never modifies it.
     """
 
+    container_name = CONTAINER_NAME
+    property_name = PROPERTY_NAME
+
     def __init__(self, document: Any) -> None:
         self._document = document
 
     def _container(self) -> Any:
-        return self._document.getObject(CONTAINER_NAME)
+        return self._document.getObject(self.container_name)
 
     def load(self) -> List[Dict[str, Any]]:
         container = self._container()
-        if container is None or not hasattr(container, PROPERTY_NAME):
+        if container is None or not hasattr(container, self.property_name):
             return []
-        raw = getattr(container, PROPERTY_NAME)
+        raw = getattr(container, self.property_name)
         if not raw:
             return []
         data = json.loads(raw)
@@ -37,9 +42,16 @@ class DocumentStorage:
     def save(self, setups: Sequence[Mapping[str, Any]]) -> None:
         container = self._container()
         if container is None:
-            container = self._document.addObject("App::FeaturePython", CONTAINER_NAME)
+            container = self._document.addObject("App::FeaturePython", self.container_name)
             container.addProperty(
-                "App::PropertyString", PROPERTY_NAME, "IndexedCAM", "Serialized setups"
+                "App::PropertyString", self.property_name, "IndexedCAM", "Serialized data"
             )
-            container.setEditorMode(PROPERTY_NAME, 2)
-        setattr(container, PROPERTY_NAME, json.dumps(list(setups)))
+            container.setEditorMode(self.property_name, 2)
+        setattr(container, self.property_name, json.dumps(list(setups)))
+
+
+class ProgramDocumentStorage(DocumentStorage):
+    """Program steps stored in their own container object."""
+
+    container_name = PROGRAM_CONTAINER_NAME
+    property_name = PROGRAM_PROPERTY_NAME

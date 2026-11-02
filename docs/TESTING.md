@@ -187,3 +187,9 @@ cat /tmp/assign.log
 - **Face Orientation** pide el nombre al crear el Setup (por defecto `Setup`, `Setup 2`…). Un nombre vacío o repetido se rechaza con un aviso y se vuelve a preguntar.
 - **Rename Setup**: elige el Setup y escribe el nuevo nombre (el botón OK se desactiva si es inválido). Se actualizan, en una sola transacción deshacible (Ctrl+Z), el Setup guardado, la etiqueta de su modelo local (`IndexedCAM_Local_<nombre>`) y la propiedad `IndexedSetup` de todas sus operaciones CAM. Los nombres internos de objeto no cambian, así que las expresiones y los enlaces de CAM siguen válidos.
 - `tests/freecad/check_assign_operation.py` comprueba el renombrado y su persistencia tras guardar y reabrir.
+
+## Programa de operaciones (#14)
+
+Pulsa **Program** en la barra IndexedCAM: lista los pasos en orden (`Setup → operación`) indicando si el paso parte de la posición segura inicial, continúa del anterior o requiere una transición B/C (entre Setups distintos). **Subir/Bajar** reordena (deshacible). El programa se sincroniza solo con el Job: las operaciones nuevas se añaden al final, las eliminadas desaparecen y el renombrado de un Setup se refleja. Las transiciones en sí se planifican en #16.
+
+La comprobación `tests/freecad/check_assign_operation.py` cubre el programa (orden, poses en coordenadas de pieza, renombrado, guardado y reapertura).

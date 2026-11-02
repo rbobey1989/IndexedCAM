@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from typing import Any, Callable, ContextManager, Optional, Protocol, Sequence, Tuple
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup
+from IndexedCAM.Core.program import Program
 from IndexedCAM.Core.setup_manager import SetupManager
 
 COMMAND_NAME = "IndexedCAM_RenameSetup"
@@ -36,7 +37,9 @@ class RenameSetupWorkflow:
         renamer: SetupRenamer,
         ask: RenameRequest,
         transaction: Optional[Callable[[], ContextManager[Any]]] = None,
+        program: Optional[Program] = None,
     ) -> None:
+        self._program = program
         self._manager = manager
         self._renamer = renamer
         self._ask = ask
@@ -60,6 +63,8 @@ class RenameSetupWorkflow:
         with self._transaction():
             self._manager.rename(old, new)
             self._renamer.rename_setup(old, new)
+            if self._program is not None:
+                self._program.rename_setup(old, new)
         return self._manager.get(new)
 
 
@@ -129,7 +134,7 @@ class RenameSetupCommand:
 
         from IndexedCAM.Commands.transaction import DocumentTransaction
         from IndexedCAM.Core.cam_bridge import CamBridge
-        from IndexedCAM.Core.document_storage import DocumentStorage
+        from IndexedCAM.Core.document_storage import DocumentStorage, ProgramDocumentStorage
 
         document = FreeCAD.ActiveDocument
         try:
@@ -138,6 +143,7 @@ class RenameSetupCommand:
                 CamBridge(document),
                 _ask_dialog,
                 lambda: DocumentTransaction(document, "Rename indexed setup"),
+                Program(ProgramDocumentStorage(document)),
             ).run()
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))

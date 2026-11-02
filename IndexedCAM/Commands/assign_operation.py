@@ -125,7 +125,8 @@ class AssignOperationCommand:
         from PySide import QtWidgets
 
         from IndexedCAM.Core.cam_bridge import CamBridge
-        from IndexedCAM.Core.document_storage import DocumentStorage
+        from IndexedCAM.Core.document_storage import DocumentStorage, ProgramDocumentStorage
+        from IndexedCAM.Core.program import Program
 
         document = FreeCAD.ActiveDocument
         try:
@@ -136,6 +137,7 @@ class AssignOperationCommand:
                 _choose_dialog,
                 document.getObject,
                 lambda: DocumentTransaction(document, "Prepare indexed setup for CAM"),
+                program=Program(ProgramDocumentStorage(document)),
             )
             assignment = workflow.run()
         except (AssignmentError, ValueError) as error:

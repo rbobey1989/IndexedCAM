@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, ContextManager, List, Optional, Sequence, Tuple
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup
+from IndexedCAM.Core.program import Program
 from IndexedCAM.Core.setup_manager import SetupManager
 
 
@@ -90,7 +91,9 @@ class AssignOperationWorkflow:
         find_source: Callable[[str], Any],
         transaction: Optional[Callable[[], ContextManager[Any]]] = None,
         operation_types: Sequence[OperationType] = OPERATION_TYPES,
+        program: Optional[Program] = None,
     ) -> None:
+        self._program = program
         self._manager = manager
         self._bridge = bridge
         self._launcher = launcher
@@ -146,3 +149,5 @@ class AssignOperationWorkflow:
             if names != setup.operations:
                 setup.operations = names
                 self._manager.update(setup)
+        if self._program is not None:
+            self._program.sync(self._bridge.bound_steps(job))

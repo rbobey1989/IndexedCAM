@@ -95,3 +95,14 @@ def heights_above(
     if safe_offset < 0.0 or clearance_offset < safe_offset:
         raise ValueError("need 0 <= safe_offset <= clearance_offset")
     return OperationHeights(top, top + safe_offset, top + clearance_offset)
+
+
+def local_to_part(frame: LocalFrame, point: Vector) -> Vector:
+    """Inverse of the part -> local transform: ``origin + R p_local``."""
+    return tuple(  # type: ignore[return-value]
+        frame.origin[i]
+        + frame.x_axis[i] * point[0]
+        + frame.y_axis[i] * point[1]
+        + frame.z_axis[i] * point[2]
+        for i in range(3)
+    )

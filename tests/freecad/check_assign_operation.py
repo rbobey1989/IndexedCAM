@@ -60,8 +60,13 @@ try:
     doc.recompute()
     Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
+    from IndexedCAM.Commands import program as program_command
+    from IndexedCAM.Core.document_storage import ProgramDocumentStorage
+    from IndexedCAM.Core.program import Program, Step
+
     manager = SetupManager(DocumentStorage(doc))
     bridge = CamBridge(doc)
+    program = Program(ProgramDocumentStorage(doc))
 
     def make_setup(face, name):
         Gui.Selection.clearSelection()
@@ -83,6 +88,7 @@ try:
             manager, bridge, assign_operation.CamOperationLauncher(doc),
             lambda setups, types: Choice(setup_name, op_type), doc.getObject,
             lambda: DocumentTransaction(doc, "Prepare indexed setup for CAM"),
+            program=program,
         )
         return workflow.run()
 
@@ -123,9 +129,24 @@ try:
     check(doc.getObject(name4) is None, "cancelling the panel deletes the operation")
     assign_operation_wf = AssignOperationWorkflow(
         manager, bridge, assign_operation.CamOperationLauncher(doc),
-        lambda s, t: None, doc.getObject)
+        lambda s, t: None, doc.getObject, program=program)
     assign_operation_wf.run()
     check(len(manager.get("Superior").operations) == 1, "cancelled operation pruned from Setup")
+
+    check([(s.setup, s.operation) for s in program.steps()] ==
+          [("Lateral X", op1.Name), ("Superior", second.operation.Name),
+           ("Lateral X", third.operation.Name)],
+          "program holds the surviving steps in creation order")
+    items = program_command.resolve_program(program, manager, bridge, doc)
+    check(items[0].previous is None and items[1].needs_transition and items[2].needs_transition,
+          "transitions required between different Setups")
+    check(items[0].end is not None and items[1].start.b == manager.get("Superior").b,
+          "step poses use the Setup angles")
+    log("start", items[0].start, "end", items[0].end)
+    check(60.0 < items[0].start.point[0] <= 70.5 and items[0].start.b == 90.0,
+          "step start lies above the X=60 face, in part coordinates")
+    program.move(third.operation.Name, 0)
+    check(program.steps()[0].operation == third.operation.Name, "program can be reordered")
 
     # renaming propagates to the local model and the operations
     from IndexedCAM.Commands import rename_setup
@@ -135,8 +156,10 @@ try:
     ops_before = [o.Name for o in bridge.operations_of(job, "Lateral X")]
     renamed = rename_setup.RenameSetupWorkflow(
         manager, bridge, lambda setups, err: ("Lateral X", "Cara Lateral"),
-        lambda: DocumentTransaction(doc, "Rename indexed setup"),
+        lambda: DocumentTransaction(doc, "Rename indexed setup"), program,
     ).run()
+    check({s.setup for s in program.steps()} == {"Cara Lateral", "Superior"},
+          "program follows the Setup rename")
     check(renamed.name == "Cara Lateral" and "Lateral X" not in manager, "Setup renamed")
     model = local_model.find(doc, "Cara Lateral")
     check(model is not None and local_model.find(doc, "Lateral X") is None, "local model follows")
@@ -154,6 +177,7 @@ try:
     reopened_manager = SetupManager(DocumentStorage(reopened))
     check("Cara Lateral" in reopened_manager, "renamed Setup survives save/reload")
     check(local_model.find(reopened, "Cara Lateral") is not None, "local model survives reload")
+    check(len(Program(ProgramDocumentStorage(reopened))) == 3, "program survives reload")
     check(len(CamBridge(reopened).operations_of(CamBridge(reopened).find_job(), "Cara Lateral")) == 2,
           "operations keep the new name after reload")
     log("PASS")
