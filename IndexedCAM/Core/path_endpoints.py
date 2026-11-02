@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Tuple
+import math
+from typing import Any, Iterable, List, Optional, Tuple
 
 Vector = Tuple[float, float, float]
 Endpoints = Tuple[Vector, Vector]
@@ -32,3 +33,31 @@ def path_endpoints(commands: Iterable[Any]) -> Optional[Endpoints]:
     if not seen or first is None:
         return None
     return first, current
+
+
+def path_points(commands: Iterable[Any], step: float = 5.0) -> List[Vector]:
+    """Tool positions along a path, subdividing long moves to at most ``step`` mm.
+
+    Arcs are approximated by their end points; the first move starts from the
+    first complete position.
+    """
+    if step <= 0:
+        raise ValueError("step must be positive")
+    position = {"X": 0.0, "Y": 0.0, "Z": 0.0}
+    points: List[Vector] = []
+    for command in commands:
+        if str(command.Name).upper() not in _MOVES:
+            continue
+        previous = (position["X"], position["Y"], position["Z"])
+        for axis in position:
+            if axis in command.Parameters:
+                position[axis] = float(command.Parameters[axis])
+        current = (position["X"], position["Y"], position["Z"])
+        if points:
+            length = sum((a - b) ** 2 for a, b in zip(previous, current)) ** 0.5
+            count = max(1, math.ceil(length / step))
+            for i in range(1, count):
+                t = i / count
+                points.append(tuple(a + (b - a) * t for a, b in zip(previous, current)))  # type: ignore[arg-type]
+        points.append(current)
+    return points

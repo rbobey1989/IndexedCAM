@@ -19,7 +19,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 12 | #14 | Programa: secuencia de pasos encadenados | Hecho |
 | 13 | #15 | Envolvente de herramienta/cabezal en la máquina | Hecho |
 | 14 | #16 | `TransitionPlanner` (retirada, giro, aproximación) | Hecho |
-| 15 | #17 | `CollisionChecker` | Pendiente |
+| 15 | #17 | `CollisionChecker` | Hecho |
 | 16 | #18 | Visualización de herramienta/movimientos y reproductor | Pendiente |
 | 17 | #19 | Postprocesador `indexedcam_post.py` | Pendiente |
 

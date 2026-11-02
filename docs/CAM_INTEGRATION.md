@@ -141,3 +141,14 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 ## Estado de la planificación (#16)
 
 `Core/transition_planner.py` implementa los pasos 1–6 anteriores con un `CollisionChecker` inyectable (`collision(punta, B, C) -> Optional[str]`; la implementación con `Part` es #17). Alternativas, por este orden: equivalentes del solver más cercanos primero (C±360°, y (−B, C+180°) si la máquina admite B negativo) y después esfera 1.5× mayor. Muestreo: ≤2° en B/C y 5 mm en tramos lineales. Sin alternativa válida lanza `TransitionError` con la fase, la posición y el obstáculo; nunca devuelve una transición sin validar.
+
+## Comprobador de colisiones (#17)
+
+`PartCollisionChecker(envelope, obstacles, margen=2 mm)` (`Core/collision_checker.py`). Obstáculos en coordenadas de pieza: modelo y bruto (*cortables*, `obstacles_from_job`) y utillaje (opcional). Dos modos:
+
+- `collision(punta, B, C)`: tránsito; todos los cilindros contra todos los obstáculos.
+- `cutting_collision(...)`: mecanizado; la herramienta puede tocar lo cortable, pero portaherramientas y cabezal no, y el utillaje se comprueba con todo. La parte no cortante de la herramienta (vástago) tampoco se distingue de la zona de corte: se asume que toda la longitud puede cortar.
+
+`check_operation(check, op.Path.Commands, frame, B, C)` recorre la trayectoria (puntos cada ≤5 mm; arcos aproximados por sus extremos) y devuelve el primer choque con su posición. Un filtro previo por cajas envolventes evita llamar a `distToShape` cuando no hay cercanía. Verificado con `tests/freecad/check_collision.py`.
+
+Pendiente de integrar en un comando: construir el comprobador desde el Job y mostrar el resultado (llega con #18).

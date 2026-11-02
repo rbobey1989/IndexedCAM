@@ -111,3 +111,30 @@ def test_describe():
     assert "posición segura" in lines[0]
     assert "transición B0.0/C0.0 → B90.0/C0.0" in lines[1]
     assert "sin movimientos" in lines[2]
+
+
+def test_path_points_subdivides_and_ignores_non_motion():
+    from IndexedCAM.Core.path_endpoints import path_points
+
+    commands = [cmd("G0", X=0.0, Y=0.0, Z=10.0), cmd("M6"), cmd("G1", Z=0.0)]
+    points = path_points(commands, step=5.0)
+    assert points == [(0.0, 0.0, 10.0), (0.0, 0.0, 5.0), (0.0, 0.0, 0.0)]
+    assert path_points([cmd("M6")]) == []
+    with pytest.raises(ValueError):
+        path_points(commands, 0)
+
+
+def test_check_operation_reports_first_hit_in_part_coordinates():
+    from IndexedCAM.Core.collision_checker import check_operation
+
+    frame = IndexedSetup(name="T", normal=(0, 0, 1), b=0, c=0, origin=(10, 0, 0)).local_frame()
+    commands = [cmd("G0", X=0.0, Y=0.0, Z=10.0), cmd("G1", Z=0.0)]
+    seen = []
+
+    def check(tip, b, c):
+        seen.append(tip)
+        return "choque" if tip[2] == 0 else None
+
+    message = check_operation(check, commands, frame, 0.0, 0.0)
+    assert message.startswith("en (10.0, 0.0, 0.0)") and "choque" in message
+    assert check_operation(lambda *a: None, commands, frame, 0.0, 0.0) is None
