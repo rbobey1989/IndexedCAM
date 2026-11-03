@@ -199,7 +199,3 @@ La comprobación `tests/freecad/check_assign_operation.py` cubre el programa (or
 Pulsa **Preview** en la barra IndexedCAM (requiere operaciones asignadas, ver Programa). Se abre una ventana no modal con la lista de pasos: cada operación y, entre Setups distintos, su transición. Al elegir una entrada se dibuja su trayectoria (azul) y la herramienta (naranja), el vástago, el portaherramientas y el cabezal con la pose B/C de la muestra. **Deslizador** y **▶ Reproducir** recorren las muestras; si una muestra colisiona, la herramienta se pinta de **rojo** y el estado indica el obstáculo. **Buscar colisiones** salta a la primera muestra con colisión. Las transiciones que no se pudieron validar se marcan con ⚠ y se muestra la ruta intentada. Al cerrar la ventana se limpia la vista 3D.
 
 Notas: la transición se valida con la herramienta del paso al que llega; los obstáculos son la pieza (el bruto y el utillaje aún no se definen desde la interfaz). La comprobación en FreeCAD (`check_assign_operation.py`) cubre clips, escena 3D y ventana.
-
-## Herramienta inclinada en el banco CAM
-
-Con el workbench IndexedCAM cargado (basta haberlo activado una vez), al **seleccionar una operación asociada a una orientación** (en el árbol o en la vista) se dibujan su trayectoria sobre la pieza y la herramienta, el portaherramientas y el cabezal inclinados con B/C del Setup, en la posición inicial de la trayectoria. Al deseleccionar desaparecen; no se guarda nada en el documento. `Preview` sigue mostrando el recorrido completo, las transiciones y las colisiones.
