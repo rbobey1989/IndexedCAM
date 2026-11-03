@@ -51,19 +51,11 @@ class DocumentResources:
         return path_points(self._operation(operation).Path.Commands, step=2.0)
 
 
-def build_clips(
-    document: Any,
-    manager: Any,
-    program: Any,
-    bridge: Any,
-    machine: Optional[BCMachine] = None,
-    items: Optional[Sequence[Any]] = None,
-) -> List[Clip]:
+def build_clips(document: Any, manager: Any, program: Any, bridge: Any, machine: Optional[BCMachine] = None) -> List[Clip]:
     from IndexedCAM.Commands.program import resolve_program
 
     machine = machine or BCMachine()
-    if items is None:
-        items = resolve_program(program, manager, bridge, document)
+    items = resolve_program(program, manager, bridge, document)
     if not items:
         return []
     setups = {s.name: s for s in manager.list()}
