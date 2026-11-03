@@ -8,13 +8,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup  # noqa: E402
 from IndexedCAM.Core.operation_assignment import (  # noqa: E402
-    OPERATION_TYPES,
     AssignmentError,
     AssignOperationWorkflow,
-    Choice,
-    OperationLauncher,
+    OperationAssigner,
     parse_source,
 )
+from IndexedCAM.Core.program import MemoryProgramStorage, Program  # noqa: E402
 from IndexedCAM.Core.setup_manager import MemoryStorage, SetupManager  # noqa: E402
 
 
@@ -24,46 +23,32 @@ def make_setup(name="Cara X", source="Box.Face2"):
     )
 
 
+def make_op(name):
+    return SimpleNamespace(Name=name, Label=name)
+
+
 class FakeBridge:
-    def __init__(self):
-        self.job = None
+    def __init__(self, ops):
+        self.ops = ops
         self.calls = []
-        self.bound = []
 
-    def find_job(self):
-        return self.job
+    def operations(self):
+        return list(self.ops)
 
-    def ensure_job(self, source):
-        self.calls.append(("ensure_job", source))
-        self.job = self.job or SimpleNamespace(name="Job")
-        return self.job
-
-    def attach_setup(self, job, source, setup):
+    def attach_setup(self, source, setup):
         self.calls.append(("attach", setup.name))
 
-    def bind_operation(self, operation, setup_name, face):
-        self.bound.append((operation, setup_name, face))
+    def bind_operation(self, operation, setup_name):
+        self.calls.append(("bind", operation.Name, setup_name))
         operation.IndexedSetup = setup_name
 
-    def operations_of(self, job, setup_name):
-        return [
-            op for op in getattr(job, "ops", []) if getattr(op, "IndexedSetup", None) == setup_name
-        ]
+    def operations_of(self, setup_name):
+        return [op for op in self.ops if getattr(op, "IndexedSetup", None) == setup_name]
 
+    def bound_steps(self):
+        from IndexedCAM.Core.program import Step
 
-class FakeLauncher(OperationLauncher):
-    def __init__(self, result="op"):
-        self.result = result
-        self.launched = []
-
-    def launch(self, job, operation, bind):
-        self.launched.append(operation.key)
-        if self.result is None:
-            return None
-        created = SimpleNamespace(Name="Op1", Label="Op1")
-        bind(created)
-        job.ops = getattr(job, "ops", []) + [created]
-        return created
+        return [Step(op.IndexedSetup, op.Name) for op in self.ops if hasattr(op, "IndexedSetup")]
 
 
 class Transaction:
@@ -76,21 +61,23 @@ class Transaction:
         Transaction.log.append("close" if exc[0] is None else "abort")
 
 
-def build(setups=(), chooser=None, source=object(), launcher=None):
+def build(setups=(), ops=("Op1", "Op2"), chooser=None, source=object()):
     manager = SetupManager(MemoryStorage())
     for setup in setups:
         manager.add(setup)
-    bridge = FakeBridge()
-    launcher = launcher or FakeLauncher()
+    bridge = FakeBridge([make_op(n) for n in ops])
+    program = Program(MemoryProgramStorage())
+    assigner = OperationAssigner(
+        manager, bridge, lambda name: source if name == "Box" else None, program
+    )
     workflow = AssignOperationWorkflow(
         manager,
         bridge,
-        launcher,
-        chooser or (lambda s, t: Choice(s[-1].name, t[0])),
-        lambda name: source if name == "Box" else None,
+        assigner,
+        chooser or (lambda s, o: (s[-1].name, [o[0]])),
         Transaction,
     )
-    return workflow, manager, bridge, launcher
+    return workflow, manager, bridge, program, assigner
 
 
 def test_parse_source():
@@ -111,52 +98,51 @@ def test_without_setups_asks_to_create_one():
         workflow.run()
 
 
+def test_without_operations_asks_to_create_them_in_cam():
+    workflow, *_ = build([make_setup()], ops=())
+    with pytest.raises(AssignmentError, match="banco CAM"):
+        workflow.run()
+
+
 def test_cancel_changes_nothing():
-    workflow, _, bridge, launcher = build([make_setup()], chooser=lambda s, t: None)
+    workflow, _, bridge, *_ = build([make_setup()], chooser=lambda s, o: None)
     assert workflow.run() is None
-    assert bridge.calls == [] and launcher.launched == []
+    assert bridge.calls == []
 
 
-def test_assign_prepares_job_binds_face_and_launches():
+def test_assign_attaches_setup_and_binds_chosen_operations():
     Transaction.log.clear()
-    workflow, manager, bridge, launcher = build([make_setup("A"), make_setup("B")])
+    workflow, manager, bridge, *_ = build([make_setup("A"), make_setup("B")])
     result = workflow.run()
     assert result.setup.name == "B"
-    assert launcher.launched == [OPERATION_TYPES[0].key]
-    assert [c[0] for c in bridge.calls] == ["ensure_job", "attach"]
-    assert bridge.bound[0][1:] == ("B", "Face2")
+    assert bridge.calls == [("attach", "B"), ("bind", "Op1", "B")]
     assert Transaction.log == ["open", "close"]
 
 
-def test_setup_operations_follow_the_job():
-    workflow, manager, *_ = build([make_setup()])
+def test_setup_operations_and_program_follow_the_job():
+    workflow, manager, _, program, _ = build([make_setup()])
     workflow.run()
     assert manager.get("Cara X").operations == ["Op1"]
+    assert [s.operation for s in program.steps()] == ["Op1"]
 
 
-def test_cancelled_operation_is_not_recorded():
-    workflow, manager, *_ = build([make_setup()], launcher=FakeLauncher(result=None))
-    assert workflow.run() is None
+def test_assign_with_no_operations_only_attaches_the_setup():
+    _, manager, bridge, _, assigner = build([make_setup()])
+    assigner.assign("Cara X", [])
+    assert bridge.calls == [("attach", "Cara X")]
     assert manager.get("Cara X").operations == []
 
 
-def test_stale_operations_are_pruned_on_next_run():
+def test_stale_operations_are_pruned_on_sync():
     setup = make_setup()
     setup.operations = ["Gone"]
-    workflow, manager, bridge, _ = build([setup], chooser=lambda s, t: None)
-    bridge.job = SimpleNamespace(ops=[])
-    workflow.run()
+    _, manager, _, _, assigner = build([setup])
+    assigner.sync_operations()
     assert manager.get("Cara X").operations == []
 
 
 def test_missing_source_object_is_reported_before_changes():
-    workflow, _, bridge, launcher = build([make_setup(source="Gone.Face1")])
+    workflow, _, bridge, *_ = build([make_setup(source="Gone.Face1")])
     with pytest.raises(AssignmentError, match="Gone"):
         workflow.run()
-    assert bridge.calls == [] and launcher.launched == []
-
-
-def test_operation_catalog_is_unique_and_native():
-    keys = [t.key for t in OPERATION_TYPES]
-    assert len(keys) == len(set(keys))
-    assert all(t.gui_module.startswith("Path.Op.Gui.") for t in OPERATION_TYPES)
+    assert bridge.calls == []

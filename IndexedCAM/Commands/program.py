@@ -16,9 +16,7 @@ def resolve_program(
     program: Program, manager: SetupManager, bridge: Any, document: Any
 ) -> List[ChainedStep]:
     """Sync the program with the Job and chain it using each operation's real path."""
-    job = bridge.find_job()
-    if job is not None:
-        program.sync(bridge.bound_steps(job))
+    program.sync(bridge.bound_steps())
     endpoints: Dict[str, Optional[Any]] = {}
     for step in program.steps():
         operation = document.getObject(step.operation)
@@ -52,14 +50,19 @@ class ProgramCommand:
         from PySide import QtWidgets
 
         from IndexedCAM.Commands.transaction import DocumentTransaction
-        from IndexedCAM.Core.cam_bridge import CamBridge
-        from IndexedCAM.Core.document_storage import DocumentStorage, ProgramDocumentStorage
+        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Core.job_context import JobCancelled
         from IndexedCAM.Core.program import describe
 
         document = FreeCAD.ActiveDocument
-        manager = SetupManager(DocumentStorage(document))
-        program = Program(ProgramDocumentStorage(document))
-        bridge = CamBridge(document)
+        try:
+            ctx = open_context(document, selected_objects())
+        except JobCancelled:
+            return
+        except ValueError as error:
+            QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
+            return
+        manager, program, bridge = ctx.manager, ctx.program, ctx.bridge
 
         dialog = QtWidgets.QDialog(Gui.getMainWindow())
         dialog.setWindowTitle(DIALOG_TITLE)

@@ -133,18 +133,21 @@ class RenameSetupCommand:
         from PySide import QtWidgets
 
         from IndexedCAM.Commands.transaction import DocumentTransaction
-        from IndexedCAM.Core.cam_bridge import CamBridge
-        from IndexedCAM.Core.document_storage import DocumentStorage, ProgramDocumentStorage
+        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Core.job_context import JobCancelled
 
         document = FreeCAD.ActiveDocument
         try:
+            ctx = open_context(document, selected_objects())
             renamed = RenameSetupWorkflow(
-                SetupManager(DocumentStorage(document)),
-                CamBridge(document),
+                ctx.manager,
+                ctx.bridge,
                 _ask_dialog,
                 lambda: DocumentTransaction(document, "Rename indexed setup"),
-                Program(ProgramDocumentStorage(document)),
+                ctx.program,
             ).run()
+        except JobCancelled:
+            return
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

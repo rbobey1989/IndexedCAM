@@ -127,7 +127,7 @@ manager.rename("Cara 1", "Lado X")
 print(manager.names())
 ```
 
-Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con `SetupManager(DocumentStorage(FreeCAD.ActiveDocument))`. Aparecen como el objeto `IndexedCAM_Setups` en el árbol.
+Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con el mismo código. (Los comandos del banco usan `JobStorage(job)`: las orientaciones viven dentro del Job de CAM, grupo `Orientations`.)
 
 ## Mostrar la triada local de un Setup
 
@@ -149,14 +149,14 @@ Ejes: X rojo, Y verde, Z azul (eje de herramienta, apunta a la normal de la cara
 1. Reinicia FreeCAD y elige el banco **IndexedCAM**.
 2. Selecciona una única cara en la vista 3D.
 3. Pulsa **Face Orientation** (barra de herramientas o menú IndexedCAM).
-4. Se muestra la triada local con B/C calculados; introduce el nombre del Setup (cancelar descarta la triada).
-5. El Setup se guarda en el documento. `Ctrl+Z` lo deshace y `Ctrl+Y` lo rehace.
+4. Se muestra la triada local con B/C calculados; introduce el nombre del Setup (cancelar descarta la triada) y marca las operaciones del Job que se orientarán a él.
+5. El Setup se guarda en el Job (requiere un Job creado en CAM). `Ctrl+Z` lo deshace y `Ctrl+Y` lo rehace.
 
 Sin selección válida aparece un aviso.
 
 ## Puente con el banco CAM (#12)
 
-Las pruebas puras corren con `python3 -m pytest -q`. La comprobación dentro de FreeCAD (Job único, clones ligeros, alturas, recarga del archivo) se lanza con el AppImage; el log termina en `PASS`:
+Las pruebas puras corren con `python3 -m pytest -q`. La comprobación dentro de FreeCAD (Job de CAM, clones ligeros, alturas, recarga del archivo) se lanza con el AppImage; el log termina en `PASS`:
 
 ```bash
 INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
@@ -164,15 +164,15 @@ INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
 cat /tmp/bridge.log
 ```
 
-## Comando Assign Operation (#13)
+## Flujo completo con el Job nativo (Face Orientation + Assign Operation)
 
-Prueba manual (flujo completo):
+1. Banco **CAM**: crea un **Job** con tu pieza y añade operaciones (Face, Pocket, Profile…) con su herramienta, como siempre.
+2. Banco **IndexedCAM**: selecciona una cara y pulsa **Face Orientation**. Si el documento tiene varios Jobs se elige a cuál pertenece (se deduce de la selección si la pieza solo está en uno).
+3. Escribe el nombre y marca las operaciones del Job que quieres mecanizar orientadas a esa cara (puedes dejarlas sin marcar).
+4. En el árbol aparece el grupo **Orientations** junto al Job, con un objeto por orientación (B, C y origen). Las operaciones marcadas tienen la propiedad `IndexedSetup` y su Base está en el clon local (`IndexedCAM_Local_<nombre>`, dentro de `Job.Model`).
+5. **Assign Operation** asocia después otras operaciones a una orientación existente. En CAM cada trayectoria está en el sistema local de su Setup (cara en Z=0).
 
-1. Banco **IndexedCAM**, selecciona una cara y pulsa **Face Orientation** (nombre p. ej. `Lateral X`).
-2. Repite con otra cara (otro Setup).
-3. Pulsa **Assign Operation**: elige el Setup y el tipo de operación (Face, Pocket Shape, Profile, Adaptive).
-4. Se abre el panel nativo de CAM con la cara del Setup ya como base. Acepta con OK; con Cancel la operación se elimina.
-5. Cambia al banco **CAM**: hay un único Job con las operaciones de todos los Setups; cada trayectoria está en el sistema local de su Setup (cara en Z=0).
+Sin Job, los comandos avisan de que hay que crearlo antes en el banco CAM.
 
 Comprobación automática dentro de FreeCAD (el log termina en `PASS`):
 

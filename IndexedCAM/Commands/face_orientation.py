@@ -27,7 +27,10 @@ NameRequest = Callable[[FaceOrientation, str], Optional[str]]
 
 
 class FaceOrientationWorkflow:
-    """Select face -> orient -> preview triad -> confirm name -> store Setup."""
+    """Select face -> orient -> preview triad -> confirm name -> store Setup.
+
+    ``on_created`` runs in the same transaction (e.g. to pick its operations).
+    """
 
     def __init__(
         self,
@@ -36,7 +39,9 @@ class FaceOrientationWorkflow:
         triad: Any,
         ask_name: NameRequest,
         transaction: Optional[Callable[[], ContextManager[Any]]] = None,
+        on_created: Optional[Callable[[IndexedSetup], None]] = None,
     ) -> None:
+        self._on_created = on_created
         self._service = service
         self._manager = manager
         self._triad = triad
@@ -63,6 +68,8 @@ class FaceOrientationWorkflow:
         )
         with self._transaction():
             self._manager.add(setup)
+            if self._on_created is not None:
+                self._on_created(setup)
         return setup
 
 
@@ -126,21 +133,37 @@ class FaceOrientationCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
-        from IndexedCAM.Core.document_storage import DocumentStorage
+        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Commands.dialogs import choose_operations
+        from IndexedCAM.Core.job_context import JobCancelled
 
         document = FreeCAD.ActiveDocument
         try:
-            manager = SetupManager(DocumentStorage(document))
+            ctx = open_context(document, selected_objects())
+
+            def associate(setup: IndexedSetup) -> None:
+                operations = ctx.bridge.operations()
+                chosen = operations and choose_operations(
+                    DIALOG_TITLE,
+                    "Operaciones del Job que se realizarán orientadas a '{}'\n"
+                    "(puedes dejarlas vacías y asignarlas después):".format(setup.name),
+                    operations,
+                ) or []
+                ctx.assigner.assign(setup.name, chosen)
+
             workflow = FaceOrientationWorkflow(
                 FaceOrientationService(),
-                manager,
+                ctx.manager,
                 _shared_triad(),
                 lambda orientation, default: _ask_name_dialog(
-                    orientation, default, manager.name_error
+                    orientation, default, ctx.manager.name_error
                 ),
                 lambda: DocumentTransaction(document, "Create indexed setup"),
+                associate,
             )
             setup = workflow.run(Gui.Selection.getSelectionEx())
+        except JobCancelled:
+            return
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

@@ -51,13 +51,14 @@ try:
     box.Length, box.Width, box.Height = 60, 40, 30
     doc.recompute()
 
-    bridge = CamBridge(doc)
+    from Path.Main import Job as CamJob
+
+    job = CamJob.Create("Job", [box])
+    bridge = CamBridge(job)
     sa, sb = setup("TopFace", (0, 0, 1)), setup("SideX", (1, 0, 0))
-    job = bridge.ensure_job(box)
-    check(bridge.ensure_job(box) is job, "single Job is reused")
-    ma = bridge.attach_setup(job, box, sa)
-    mb = bridge.attach_setup(job, box, sb)
-    check(local_model.find(doc, "SideX") is mb, "local model found by Setup name")
+    ma = bridge.attach_setup(box, sa)
+    mb = bridge.attach_setup(box, sb)
+    check(local_model.find(job, "SideX") is mb, "local model found by Setup name")
     check(abs(mb.Shape.BoundBox.ZMax - 60) < 1e-6, "SideX model: +X face brought to Z=60")
     check(abs(ma.Shape.BoundBox.ZMax - 30) < 1e-6, "TopFace model: Z=30")
 
@@ -68,22 +69,23 @@ try:
     ops = {}
     for name, cls, model in (("OpA", MillFace, ma), ("OpB", Pocket, mb)):
         op = cls.Create(name, parentJob=job)
-        bridge.bind_operation(op, model.SetupName, top_face(model))
+        op.Base = [(model, [top_face(model)])]
+        bridge.bind_operation(op, model.SetupName)
         ops[name] = op
     check(len(job.Operations.Group) == 2, "both operations live in the same Job")
     check(max(local_z(ops["OpA"])) == 40, "OpA clearance Z=40 (30+10)")
     check(max(local_z(ops["OpB"])) == 70, "OpB clearance Z=70 (60+10)")
     check(len(ops["OpA"].Path.Commands) < 100, "OpA is a short face path, not stock-wide")
-    check([o.Name for o in bridge.operations_of(job, "SideX")] == ["OpB"], "operations_of")
+    check([o.Name for o in bridge.operations_of("SideX")] == ["OpB"], "operations_of")
 
     box.Length = 80
     doc.recompute()
     check(abs(mb.Shape.BoundBox.ZMax - 80) < 1e-6, "local model follows source edit")
-    bridge.refresh_all(job)
+    bridge.refresh_all()
     check(max(local_z(ops["OpB"])) == 90, "refresh_all updates heights after edit")
 
     try:
-        bridge.detach_setup(job, "SideX")
+        bridge.detach_setup("SideX")
         check(False, "detach with bound ops must fail")
     except CamBridgeError:
         check(True, "detach refuses a Setup with operations")
@@ -94,9 +96,10 @@ try:
     App.closeDocument(doc.Name)
     doc2 = App.openDocument(path)
     doc2.recompute()
-    mb2 = local_model.find(doc2, "SideX")
+    job2 = [o for o in doc2.Objects if hasattr(o, "Operations") and hasattr(o, "Tools")][0]
+    mb2 = local_model.find(job2, "SideX")
     check(mb2 is not None and not mb2.Shape.isNull(), "local model rebuilt after reload")
-    check(CamBridge(doc2).find_job() is not None, "Job found after reload")
+    check(len(CamBridge(job2).operations_of("SideX")) == 1, "bound operation found after reload")
     log("PASS")
 except Exception:
     log(traceback.format_exc())

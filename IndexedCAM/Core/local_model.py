@@ -84,9 +84,9 @@ def create(document: Any, source: Any, setup: IndexedSetup) -> Any:
     return obj
 
 
-def find(document: Any, setup_name: str) -> Any:
-    """Return the local model of ``setup_name`` or None."""
-    for obj in document.Objects:
+def find(job: Any, setup_name: str) -> Any:
+    """Return the local model of ``setup_name`` inside ``job.Model``, or None."""
+    for obj in job.Model.Group:
         if getattr(obj, "SetupName", None) == setup_name and hasattr(obj, "LocalPlacement"):
             return obj
     return None

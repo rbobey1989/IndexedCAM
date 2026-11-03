@@ -17,12 +17,13 @@ Marcados como *probado* (ejecutado en el AppImage) o *código* (leído en `Mod/C
 | Las operaciones se crean por API: `Path.Op.<Tipo>.Create(nombre, parentJob=job)` y se asignan caras con `op.Base = [(objeto, ['FaceN'])]`. | probado |
 | Cada operación expone `op.Path.Commands` tras `recompute()`; el `Job` expone `Operations.Group` y `ToolController`. | probado |
 
-## Decisión: un único Job CAM con un clon local por Setup
+## Decisión: el Job lo crea el usuario en CAM; IndexedCAM añade orientaciones dentro de él
 
-Un solo Job reúne todas las operaciones; cada operación se enlaza a un Setup de IndexedCAM.
+El usuario crea el Job y sus operaciones con el banco CAM nativo. IndexedCAM no crea Jobs ni operaciones: añade al Job un grupo de orientaciones y orienta las operaciones que el usuario elija. Con varios Jobs en el documento, las orientaciones pertenecen al Job relacionado con la selección (o al que se elija en un diálogo).
 
 ```
-Job CAM único "IndexedCAM_Job"
+Job CAM del usuario
+├─ Orientations (grupo de IndexedCAM en job.Group): una orientación por Setup
 ├─ Modelo (Job.Model): clon local por Setup (Placement = marco del Setup⁻¹)
 │    LocalA (Setup "Cara A")   LocalB (Setup "Cara B")   …
 └─ Operaciones CAM estándar (UI nativa), cada una con Base = cara de SU clon
@@ -63,28 +64,28 @@ Diseño adoptado:
 Descartado: `App::Link` como modelo (el Job lo acepta pero crea su propio clon interno, sin ahorro) y clones con `Shape` persistente (archivo proporcional al número de Setups).
 
 Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente la cara del Setup) para operaciones 2.5D en piezas muy pesadas; las operaciones 3D requieren el modelo completo.
-- La relación operación → Setup se guarda en `IndexedSetup.operations` (y la inversa en el programa), sin tocar propiedades del Job.
+- La relación operación → Setup se guarda en `IndexedSetup.operations`, en la propiedad `IndexedSetup` de la operación y en el programa.
 - El orden de salida lo define el programa de IndexedCAM, no `Job.Fixtures` ni `OrderOutputBy`.
 - Alternativa descartada: un Job por Setup (multiplica Jobs, herramientas y hojas de configuración). También se descartan varios `Fixtures` (repiten todas las operaciones) y parchear operaciones CAM.
 - Verificado: `Adaptive` y `Pocket` funcionan sobre el clon local; al editar el modelo original el clon se actualiza solo; 4 clones de una pieza de 150 caras recalculan en ~1 s. Los dressups (Boundary, Tags…) no se han probado todavía.
 
 ### Hallazgos de la implementación (#12, #13)
 
-- El panel nativo de una operación nueva **vacía su `Base` y la rellena con la selección de la vista**. El comando selecciona por código la cara del clon local justo antes de abrir el panel.
-- El panel necesita el *view provider* del Job. Un Job creado solo con la API (`Path.Main.Job.Create`) hace fallar `accept()`; con GUI se crea con `Path.Main.Gui.Job.Create(..., openTaskPanel=False)`.
-- Al cancelar el panel CAM borra la operación, por eso `IndexedSetup.operations` se sincroniza desde el Job (propiedad `IndexedSetup` de cada operación) y no se edita al crearla.
+- La `Base` de una operación nativa apunta al clon propio del Job (`Model-<pieza>`), no a la pieza original; los nombres de cara (`FaceN`) coinciden, así que al asociarla se reasigna a las mismas caras del clon local del Setup.
+- Una operación o un Setup pueden borrarse en CAM en cualquier momento, por eso `IndexedSetup.operations` y el programa se sincronizan desde el Job (propiedad `IndexedSetup` de cada operación).
+- Un grupo añadido a `job.Group` persiste y guarda propiedades, pero el árbol nativo del Job solo reclama Operations, Model, Stock, SetupSheet y Tools (y `claimChildren` no se invoca desde fuera): el grupo `Orientations` aparece **junto al Job** en el árbol, no anidado.
 - La cara del Setup queda en Z=0 local y el centro de la cara en el origen XY del WCS.
 - Limitación: se asume un objeto de primer nivel (no dentro de un Body/Part con Placement propio).
 
 ## Flujo de usuario
 
-1. Seleccionar una cara → **Face Orientation** (ya implementado): B/C, triada y Setup.
-2. Tras guardar el Setup, **elegir una operación CAM** para él (Face, Pocket…). IndexedCAM usa el Job único (lo crea si no existe), añade el clon del Setup si falta, crea la operación con la cara del clon como base, fija sus alturas y abre su panel nativo.
-3. La operación **se encadena a la anterior** del programa: el programa es una lista ordenada de pasos `(Setup, Operación)`. Cada paso continúa desde el punto final del anterior; el primero parte de la posición segura inicial.
-4. Entre dos pasos de distinto Setup se inserta una **transición** (retirada → giro B/C → aproximación) validada sin colisiones.
-5. En todo momento se muestra la **orientación de la herramienta** y los movimientos (ver Visualización).
+1. En el banco **CAM**: crear el Job con la pieza y sus operaciones (con su herramienta).
+2. En **IndexedCAM**: seleccionar una cara → **Face Orientation**. Se calcula B/C, se muestra la triada, se pide el nombre y la orientación se guarda dentro del Job (grupo `Orientations`).
+3. En el mismo comando se marcan las operaciones del Job que se realizarán orientadas a ella (opcional; **Assign Operation** lo permite después). Cada operación pasa a la cara equivalente del clon local del Setup y sus alturas se ligan a él.
+4. El programa es una lista ordenada de pasos `(Setup, Operación)`; cada paso continúa desde el punto final del anterior y el primero parte de la posición segura inicial.
+5. Entre dos pasos de distinto Setup se inserta una **transición** (retirada → giro B/C → aproximación) validada sin colisiones.
+6. En todo momento se muestra la **orientación de la herramienta** y los movimientos (ver Visualización).
 
-`IndexedSetup.operations` ya guarda los nombres de operación; la secuencia global vive en el documento junto a los setups (`DocumentStorage`).
 
 ## Transiciones sin colisión
 
@@ -123,7 +124,7 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 | `Core/program.py` | Secuencia ordenada de pasos y punto final de cada uno | no |
 | `Core/local_placement.py` | Transformación parte → marco local y alturas por operación | no |
 | `Core/local_model.py` | Clon ligero `LocalModel` por Setup | sí |
-| `Core/cam_bridge.py` | Job único, `attach_setup`, `bind_operation`, `refresh_all`, `detach_setup` | sí |
+| `Core/cam_bridge.py` | Job existente (`CamBridge(job)`), `attach_setup`, `bind_operation`, `refresh_all`, `detach_setup` | sí |
 | `Core/transition_planner.py` | Retirada, giro sobre esfera, aproximación, alternativas | no |
 | `Core/collision_checker.py` | Interfaz + implementación con `Part` | sí (implementación) |
 | `Machine/envelope.py` | Herramienta, portaherramientas, cabezal, pivote | no |

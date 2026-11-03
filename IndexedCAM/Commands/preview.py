@@ -100,19 +100,15 @@ class PreviewCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
-        from IndexedCAM.Core.cam_bridge import CamBridge
-        from IndexedCAM.Core.document_storage import DocumentStorage, ProgramDocumentStorage
-        from IndexedCAM.Core.program import Program
-        from IndexedCAM.Core.setup_manager import SetupManager
+        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Core.job_context import JobCancelled
 
         document = FreeCAD.ActiveDocument
         try:
-            clips = build_clips(
-                document,
-                SetupManager(DocumentStorage(document)),
-                Program(ProgramDocumentStorage(document)),
-                CamBridge(document),
-            )
+            ctx = open_context(document, selected_objects())
+            clips = build_clips(document, ctx.manager, ctx.program, ctx.bridge)
+        except JobCancelled:
+            return
         except (ValueError, KeyError) as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

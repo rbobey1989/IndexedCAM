@@ -1,13 +1,13 @@
-"""Bridge between IndexedCAM Setups and a single FreeCAD CAM Job.
+"""Bridge between IndexedCAM Setups and an existing FreeCAD CAM Job.
 
-One Job holds every Setup: each Setup contributes a lightweight
+The Job is created by the user in CAM. It holds every Setup: each Setup contributes a lightweight
 ``LocalModel`` to ``Job.Model``, and each CAM operation of that Setup uses a
 face of its local model as ``Base``. Public CAM APIs only; CAM is not modified.
 """
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, List
 
 from IndexedCAM.Core import local_model
 from IndexedCAM.Core.indexed_setup import IndexedSetup
@@ -15,90 +15,47 @@ from IndexedCAM.Core.local_placement import OperationHeights, heights_above
 from IndexedCAM.Core.program import Step
 from IndexedCAM.Machine.envelope import Envelope
 
-JOB_MARKER = "IndexedCAMJob"
 OPERATION_SETUP_PROPERTY = "IndexedSetup"
-JOB_NAME = "IndexedCAM_Job"
 
 
 class CamBridgeError(RuntimeError):
-    """Raised when the CAM Job cannot be built or an operation cannot be bound."""
+    """Raised when an operation cannot be bound to a Setup."""
 
 
 class CamBridge:
-    """Creates and keeps in sync the Job, local models and operations."""
+    """Keeps local models and operations of one existing Job in sync."""
 
-    def __init__(
-        self, document: Any, safe_offset: float = 5.0, clearance_offset: float = 10.0
-    ) -> None:
-        self._document = document
+    def __init__(self, job: Any, safe_offset: float = 5.0, clearance_offset: float = 10.0) -> None:
+        self.job = job
+        self._document = job.Document
         self._safe_offset = safe_offset
         self._clearance_offset = clearance_offset
 
-    def find_job(self) -> Optional[Any]:
-        for obj in self._document.Objects:
-            if hasattr(obj, JOB_MARKER):
-                return obj
-        return None
-
-    def ensure_job(self, source: Any) -> Any:
-        """Return the IndexedCAM Job, creating it from ``source`` if missing."""
-        job = self.find_job()
-        if job is not None:
-            return job
-        job = self._create_job(source)
-        job.Label = JOB_NAME
-        job.addProperty("App::PropertyBool", JOB_MARKER, "IndexedCAM", "IndexedCAM Job")
-        setattr(job, JOB_MARKER, True)
-        self._document.recompute()
-        return job
-
-    def _create_job(self, source: Any) -> Any:
-        """Create the Job through CAM's GUI command when a GUI is running.
-
-        The GUI path also attaches the Job's view provider, which the CAM
-        operation panels need; the plain API path is used headless.
-        """
-        import FreeCAD
-
-        if FreeCAD.GuiUp:
-            from Path.Main.Gui import Job as JobGui
-
-            FreeCAD.setActiveDocument(self._document.Name)
-            job = JobGui.Create([source], openTaskPanel=False)
-        else:
-            from Path.Main import Job
-
-            job = Job.Create("Job", [source])
-        if job is None:
-            raise CamBridgeError("CAM could not create the Job")
-        return job
-
-    def attach_setup(self, job: Any, source: Any, setup: IndexedSetup) -> Any:
+    def attach_setup(self, source: Any, setup: IndexedSetup) -> Any:
         """Create (or update) the local model of ``setup`` and add it to the Job."""
-        model = local_model.find(self._document, setup.name)
+        model = local_model.find(self.job, setup.name)
         if model is None:
             model = local_model.create(self._document, source, setup)
         else:
             local_model.update(model, setup)
-        if model not in job.Model.Group:
-            job.Model.addObject(model)
+        if model not in self.job.Model.Group:
+            self.job.Model.addObject(model)
         self._document.recompute()
         return model
 
-    def detach_setup(self, job: Any, setup_name: str) -> None:
+    def detach_setup(self, setup_name: str) -> None:
         """Remove the local model of a Setup that has no operations bound."""
-        model = local_model.find(self._document, setup_name)
+        model = local_model.find(self.job, setup_name)
         if model is None:
             return
-        bound = self.operations_of(job, setup_name)
+        bound = self.operations_of(setup_name)
         if bound:
             raise CamBridgeError(
                 "Setup '{}' still has operations: {}".format(
                     setup_name, ", ".join(op.Label for op in bound)
                 )
             )
-        if model in job.Model.Group:
-            job.Model.removeObject(model)
+        self.job.Model.removeObject(model)
         self._document.removeObject(model.Name)
 
     def rename_setup(self, old: str, new: str) -> None:
@@ -107,13 +64,11 @@ class CamBridge:
         Object names stay (expressions and CAM refer to them); only the owning
         Setup name and the visible label change.
         """
-        model = local_model.find(self._document, old)
+        model = local_model.find(self.job, old)
         if model is not None:
             local_model.rename(model, new)
-        job = self.find_job()
-        if job is not None:
-            for operation in self.operations_of(job, old):
-                setattr(operation, OPERATION_SETUP_PROPERTY, new)
+        for operation in self.operations_of(old):
+            setattr(operation, OPERATION_SETUP_PROPERTY, new)
         self._document.recompute()
 
     def envelope_for(self, operation: Any, base: Envelope) -> Envelope:
@@ -127,24 +82,32 @@ class CamBridge:
             float(shank.Value) / 2.0 if shank is not None and shank.Value > 0 else None,
         )
 
-    def bound_steps(self, job: Any) -> List[Step]:
+    def operations(self) -> List[Any]:
+        """Every CAM operation of the Job, in Job order."""
+        return list(self.job.Operations.Group)
+
+    def bound_steps(self) -> List[Step]:
         """(Setup, operation) of every bound operation, in Job order."""
         return [
             Step(getattr(op, OPERATION_SETUP_PROPERTY), op.Name)
-            for op in job.Operations.Group
+            for op in self.operations()
             if getattr(op, OPERATION_SETUP_PROPERTY, None)
         ]
 
-    def operations_of(self, job: Any, setup_name: str) -> List[Any]:
+    def operations_of(self, setup_name: str) -> List[Any]:
         return [
             op
-            for op in job.Operations.Group
+            for op in self.operations()
             if getattr(op, OPERATION_SETUP_PROPERTY, None) == setup_name
         ]
 
-    def bind_operation(self, operation: Any, setup_name: str, face: str) -> None:
-        """Bind ``operation`` to ``face`` ("FaceN") of the Setup's local model."""
-        model = local_model.find(self._document, setup_name)
+    def bind_operation(self, operation: Any, setup_name: str) -> None:
+        """Orient an existing Job operation to a Setup.
+
+        Its Base faces are moved to the same faces of the Setup's local model
+        (face names are shared with the source) and its heights follow it.
+        """
+        model = local_model.find(self.job, setup_name)
         if model is None:
             raise CamBridgeError("Setup '{}' has no local model".format(setup_name))
         if not hasattr(operation, OPERATION_SETUP_PROPERTY):
@@ -152,13 +115,18 @@ class CamBridge:
                 "App::PropertyString", OPERATION_SETUP_PROPERTY, "IndexedCAM", "Owning Setup"
             )
         setattr(operation, OPERATION_SETUP_PROPERTY, setup_name)
-        operation.Base = [(model, [face])]
+        base = getattr(operation, "Base", None)
+        if base:
+            subs: List[str] = []
+            for _, names in base:
+                subs.extend(n for n in names if n not in subs)
+            operation.Base = [(model, subs)]
         self.refresh_operation(operation)
 
     def refresh_operation(self, operation: Any) -> OperationHeights:
         """Bind the operation heights to its Setup's local model (and return them)."""
         name = getattr(operation, OPERATION_SETUP_PROPERTY, None)
-        model = local_model.find(self._document, name) if name else None
+        model = local_model.find(self.job, name) if name else None
         if model is None:
             raise CamBridgeError("Operation '{}' is not bound to a Setup".format(operation.Label))
         heights = heights_above(
@@ -177,8 +145,8 @@ class CamBridge:
         self._document.recompute()
         return heights
 
-    def refresh_all(self, job: Any) -> None:
+    def refresh_all(self) -> None:
         """Refresh every bound operation (after the source model changed)."""
-        for op in job.Operations.Group:
+        for op in self.operations():
             if getattr(op, OPERATION_SETUP_PROPERTY, None):
                 self.refresh_operation(op)

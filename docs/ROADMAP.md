@@ -14,8 +14,9 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 7 | #5 | Triada XYZ local con Coin3D | Hecha |
 | 8 | #9 | Comando "Face Orientation" + registro del Workbench (`InitGui.py`) | Hecha |
 | 9 | #11 | Investigación de integración con CAM (sin tocar el core): ver [CAM_INTEGRATION.md](CAM_INTEGRATION.md) | Hecha |
-| 10 | #12 | Puente Setup ↔ Job CAM (Job único, clon local por Setup, alturas por operación) | Hecha |
-| 11 | #13 | Comando "Asignar operación" tras Face Orientation | Hecha |
+| 10 | #12 | Puente Setup ↔ Job CAM (clon local por Setup, alturas por operación) | Hecha |
+| 11 | #13 | Comando "Asignar operación" | Hecha |
+| 11b | — | Rediseño Job-first: el Job lo crea el usuario en CAM, las orientaciones viven dentro de él y se les asocian operaciones existentes | Hecho |
 | 12 | #14 | Programa: secuencia de pasos encadenados | Hecho |
 | 13 | #15 | Envolvente de herramienta/cabezal en la máquina | Hecho |
 | 14 | #16 | `TransitionPlanner` (retirada, giro, aproximación) | Hecho |
