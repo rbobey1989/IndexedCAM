@@ -58,11 +58,5 @@ class TiltScript:
     def next_transition_frame(self) -> Optional[PreviewFrame]:
         return self._queue.pop(0) if self._queue else None
 
-    def pending(self) -> bool:
-        return bool(self._queue)
-
-    def skip(self) -> None:
-        self._queue = []
-
     def orientation(self, operation: str) -> Optional[Tuple[float, float]]:
         return self.plan.orientation(operation)

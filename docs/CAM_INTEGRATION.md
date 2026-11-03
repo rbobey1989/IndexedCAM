@@ -160,23 +160,15 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 
 Verificado con `tests/freecad/check_collision.py` y `check_assign_operation.py`.
 
-## Simulador CAM nativo con herramienta inclinada y stock real
+## Herramienta inclinada en el simulador CAM nativo
 
-Al activar el banco IndexedCAM se envuelve el simulador **legacy** de CAM
-(`PathSimulation`, sin tocar su código):
+Al activar el banco IndexedCAM se envuelve `PathSimulation.PerformCut` del
+simulador **legacy** de CAM (sin tocar su código): antes de cada operación
+indexada reproduce, tick a tick, la transición de B/C que lleva a ella y, durante la
+operación, inclina la propia `CutTool` del simulador a su B/C alrededor de la punta
+(`Core/simulation_plan.py`, `Gui/native_simulator.py`).
 
-- Su motor de vóxeles (solo herramienta vertical) se sustituye por
-  `IndexedVoxSim` (`Gui/native_simulator.py`), que usa `VoxelStock`
-  (`Core/voxel_stock.py`): una rejilla en coordenadas de pieza que se talla con el
-  eje real de la herramienta de cada operación. El stock que se quita es el correcto.
-- Las operaciones indexadas reproducen su path **local**; la `CutTool` del propio
-  simulador se coloca con el `Placement` de la operación, así que aparece inclinada.
-- Antes de cada operación se reproduce, tick a tick, la transición de B/C que
-  lleva a ella (no en avance rápido).
-- Los G0 no cortan; las operaciones no indexadas del mismo Job se cortan igual
-  con su herramienta vertical.
-
-Límites: solo el simulador *Legacy* (`CAM_Simulator`); el OpenGL no se puede
-inclinar. La rejilla se limita a ~2 M de celdas, así que la resolución efectiva es
-`max(resolución del simulador, (volumen/2M)^(1/3))`; los arcos con plano inclinado
-se simulan como cuerda. Si falla el cálculo de transiciones, el simulador sigue sin ellas.
+Límites: solo el simulador *Legacy* (`CAM_Simulator`) dibuja un objeto `CutTool`; el
+simulador OpenGL no es inclinable. El material que retira el simulador asume
+herramienta vertical, así que para operaciones inclinadas es solo orientativo.
+Si el plan falla, el simulador sigue funcionando sin inclinación.

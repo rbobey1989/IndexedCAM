@@ -32,7 +32,7 @@ def check(condition, message):
 try:
     from Path.Main.Gui import Job as Gui_Job
     from Path.Main.Gui import Simulator
-    import Path.Op.MillFace as MillFace
+    import Path.Op.Profile as Profile
     from IndexedCAM.Commands import face_orientation
     from IndexedCAM.Commands.context import build_context
     from IndexedCAM.Commands.transaction import DocumentTransaction
@@ -46,8 +46,8 @@ try:
     Gui.ActiveDocument = Gui.getDocument(doc.Name)
     job = Gui_Job.Create([box], openTaskPanel=False)
     clone = job.Model.Group[0]
-    op = MillFace.Create("Facing", parentJob=job)
-    op.Base = [(clone, ["Face2"])]
+    op = Profile.Create("Contour", parentJob=job)
+    op.Base = [(clone, ["Face6"])]
     doc.recompute()
     ctx = build_context(doc, job)
 
@@ -69,41 +69,20 @@ try:
     check(native_simulator.install(), "simulator patched")
     check(native_simulator.install(), "patch is idempotent")
 
-    op.setExpression("FinalDepth", None)
-    op.FinalDepth = -5
-    doc.recompute()
-    ZS = sorted({round(c.Parameters["Z"], 1) for c in op.Path.Commands if "Z" in c.Parameters})
-    log("props", op.StartDepth, op.FinalDepth, op.OpFinalDepth, op.SafeHeight, len(op.Path.Commands), op.StepDown, op.Base)
-    check(min(ZS) < 0, "operation cuts below the face: %s" % ZS)
-    sim = Simulator.PathSimulation()
-    sim.Activate()
-    check(type(sim.voxSim).__name__ == "IndexedVoxSim", "indexed job uses the indexed voxel engine")
-    sim.disableAnim = True
-    tilted = False
-    for _ in range(sim.numCommands + 5):
-        if sim.ioperation >= len(sim.activeOps) or sim.icmd >= len(sim.opCommands):
-            break
-        sim.PerformCut()
-        axis = sim.cutTool.Placement.Rotation.multVec(App.Vector(0, 0, 1))
-        tilted = tilted or abs(axis.x - 1) < 1e-6
-    check(tilted, "CAM's own CutTool is tilted along the lateral operation")
-    sim.voxSim.flush()
-    stock = sim.voxSim.stock
-    removed = 1.0 - stock.volume() / (stock.cells.size * stock.resolution ** 3)
-    check(removed > 0.001, "material was removed: %.4f" % removed)
-    # the lateral operation works on the +X face: material must go near x = XMax, not on top
-    x_idx = int(stock.cells.shape[0] * 0.97)
-    top_idx = int(stock.cells.shape[2] * 0.95)
-    check(not stock.cells[x_idx].all(), "material removed on the +X face")
-    half = stock.cells.shape[0] // 2
-    check(stock.cells[:half, :, top_idx].all(), "far side of the top face untouched by the lateral operation")
-    import time
+    class Fake:
+        isVoxel = False
 
-    started = time.time()
-    mesh, inner = sim.voxSim.GetResultMesh(force=True)
-    log("mesh facets %d in %.2fs" % (mesh.CountFacets, time.time() - started))
-    check(mesh.CountFacets > 12 and abs(mesh.Volume - stock.volume()) / stock.volume() < 0.01, "display mesh matches the voxel volume")
-    sim.accept()
+        def PerformCutBoolean(self):
+            pass
+
+    sim = Fake()
+    sim.job, sim.operation, sim.busy, sim.resetSimulation = job, op, False, False
+    sim.cutTool = doc.addObject("Part::FeaturePython", "CutTool")
+    sim.cutTool.Placement = App.Placement(App.Vector(1, 2, 3), App.Rotation())
+    Simulator.PathSimulation.PerformCut(sim)
+    axis = sim.cutTool.Placement.Rotation.multVec(App.Vector(0, 0, 1))
+    check(abs(axis.x - 1) < 1e-6 and abs(axis.z) < 1e-6, "tool axis follows B/C of the operation: %s" % axis)
+    out.write("ok   native tool tilted in place\n")
     Gui.getMainWindow().close()
     out.write("PASS\n")
 except Exception:
