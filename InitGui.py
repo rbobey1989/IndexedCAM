@@ -18,6 +18,9 @@ class IndexedCAMWorkbench(Gui.Workbench):
     def Initialize(self):
         from IndexedCAM.Commands import assign_operation, face_orientation, preview, program, rename_setup
 
+        from IndexedCAM.Gui import operation_tool
+
+        operation_tool.install()
         face_orientation.register()
         assign_operation.register()
         rename_setup.register()

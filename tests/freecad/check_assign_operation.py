@@ -159,6 +159,22 @@ try:
     ctx.assigner.assign("Lateral X", [op1])
     check(len(bridge.operations_of("Lateral X")) == 2, "operation moved back")
 
+    # selecting a bound operation shows its path and the inclined tool in the 3D view
+    from IndexedCAM.Gui.operation_tool import OperationToolObserver
+
+    scene = Gui.ActiveDocument.ActiveView.getSceneGraph()
+    before = scene.getNumChildren()
+    watcher = OperationToolObserver()
+    Gui.Selection.clearSelection()
+    Gui.Selection.addSelection(doc.Name, op1.Name)
+    watcher.refresh()
+    check(watcher._view.visible and scene.getNumChildren() == before + 2,
+          "selecting an operation shows path and tool in the 3D view")
+    Gui.Selection.clearSelection()
+    watcher.refresh()
+    check(not watcher._view.visible and scene.getNumChildren() == before,
+          "deselecting removes them")
+
     # deleting an operation in CAM is reflected by the next sync
     spare = MillFace.Create("Spare", parentJob=job)
     ctx.assigner.assign("Superior", [spare])
