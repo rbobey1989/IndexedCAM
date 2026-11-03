@@ -39,6 +39,9 @@ Verificado en FreeCAD 1.1.4 (dos clones en un mismo Job con `job.Model.addObject
 Reglas derivadas:
 
 - Toda operación debe llevar `Base` explícito (cara del clon de su Setup); una operación sin Base usaría todos los clones superpuestos.
+- Los clones locales viven en el grupo `Orientations`, **no** en `Job.Model`: `StockFromBase` calcula el bruto con la caja envolvente de `Job.Model.Group` y, con copias giradas dentro, el bruto crecía (visto en un archivo real: 109×64×94 mm para una pieza de 60×40×30) y falseaba `FinalDepth`.
+- Una operación sin `Base` mecanizaría todo el modelo; al asociarla se le asigna la cara con la que se creó la orientación.
+- El marco del Setup está en coordenadas de documento, así que `LocalModel` conserva el `Placement` de su fuente (el clon del Job suele estar desplazado); antes la cara quedaba en Z=-1 en lugar de Z=0.
 - Los clones se ocultan en la vista; el modelo original sigue siendo el visible.
 
 ### Clones ligeros (`LocalModel`)

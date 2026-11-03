@@ -38,7 +38,7 @@ class FakeBridge:
     def attach_setup(self, source, setup):
         self.calls.append(("attach", setup.name))
 
-    def bind_operation(self, operation, setup_name):
+    def bind_operation(self, operation, setup_name, face=None):
         self.calls.append(("bind", operation.Name, setup_name))
         operation.IndexedSetup = setup_name
 

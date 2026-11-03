@@ -63,7 +63,7 @@ def orientations_group(job: Any) -> Any:
     return None
 
 
-def _ensure_group(job: Any) -> Any:
+def ensure_orientations_group(job: Any) -> Any:
     group = orientations_group(job)
     if group is None:
         group = job.Document.addObject("App::DocumentObjectGroup", GROUP_NAME)
@@ -99,7 +99,7 @@ class JobStorage:
         children = self._children()
         if not setups and not children:
             return
-        group = _ensure_group(self._job)
+        group = ensure_orientations_group(self._job)
         document = self._job.Document
         for index, data in enumerate(setups):
             if index < len(children):
@@ -147,7 +147,7 @@ class JobProgramStorage:
         if group is None:
             if not steps:
                 return
-            group = _ensure_group(self._job)
+            group = ensure_orientations_group(self._job)
         if not hasattr(group, PROGRAM_PROPERTY_NAME):
             group.addProperty(
                 "App::PropertyString", PROGRAM_PROPERTY_NAME, "IndexedCAM", "Program steps"

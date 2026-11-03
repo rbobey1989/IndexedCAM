@@ -44,10 +44,13 @@ class LocalModel:
 
         if obj.Source is None or obj.Source.Shape.isNull():
             return
+        # The Setup frame is expressed in document coordinates, so the source's
+        # own Placement (e.g. the Job's model clone is offset) must be kept.
+        source_placement = obj.Source.Shape.Placement
         shape = obj.Source.Shape.copy(False)
         shape.Placement = App.Placement()
         obj.Shape = shape
-        obj.Placement = obj.LocalPlacement
+        obj.Placement = obj.LocalPlacement.multiply(source_placement)
 
     def onDocumentRestored(self, obj: Any) -> None:
         obj.Proxy = self
@@ -84,9 +87,9 @@ def create(document: Any, source: Any, setup: IndexedSetup) -> Any:
     return obj
 
 
-def find(job: Any, setup_name: str) -> Any:
-    """Return the local model of ``setup_name`` inside ``job.Model``, or None."""
-    for obj in job.Model.Group:
+def find(group: Any, setup_name: str) -> Any:
+    """Return the local model of ``setup_name`` inside ``group``, or None."""
+    for obj in getattr(group, "Group", ()):
         if getattr(obj, "SetupName", None) == setup_name and hasattr(obj, "LocalPlacement"):
             return obj
     return None

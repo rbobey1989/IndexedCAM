@@ -58,6 +58,7 @@ try:
     doc = App.newDocument("Assign")
     box = doc.addObject("Part::Box", "Box")
     box.Length, box.Width, box.Height = 60, 40, 30
+    box.Placement = App.Placement(App.Vector(10, 20, 30), App.Rotation())
     doc.recompute()
     Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
@@ -73,8 +74,9 @@ try:
     op1 = MillFace.Create("Facing", parentJob=job)
     op2 = PocketShape.Create("Pocket", parentJob=job)
     op3 = Profile.Create("Contour", parentJob=job)
-    for op in (op1, op2, op3):
+    for op in (op1, op3):
         op.Base = [(clone, ["Face6"])]
+    op2.Base = []  # a Pocket created without choosing faces
     doc.recompute()
     check(resolve_job(doc, [box], lambda jobs: None) is job, "Job found from the selected part")
     ctx = build_context(doc, job)
@@ -83,9 +85,9 @@ try:
 
     from IndexedCAM.Commands import program as program_command
 
-    def make_setup(face, name, operations):
+    def make_setup(face, name, operations, owner=None):
         Gui.Selection.clearSelection()
-        Gui.Selection.addSelection(doc.Name, "Box", face)
+        Gui.Selection.addSelection(doc.Name, owner or clone.Name, face)
         Gui.Selection.addSelection(doc.Name, job.Name)
         workflow = face_orientation.FaceOrientationWorkflow(
             FaceOrientationService(), manager, face_orientation._shared_triad(),
@@ -96,28 +98,40 @@ try:
         return workflow.run(Gui.Selection.getSelectionEx())
 
     side = make_setup("Face2", "Lateral X", [op1, op3])
-    check(side.metadata["source"] == "Box.Face2", "setup remembers its source face")
+    check(side.metadata["source"] == "%s.Face2" % clone.Name, "setup remembers its source face")
     group = orientations_group(job)
     check(group is not None and group in job.Group and group.InList == [job],
           "Orientations group lives inside the Job")
-    check([o.Label for o in group.Group] == ["Lateral X"], "one object per orientation")
-    check(group.Group[0].B == 90.0 and group.Group[0].Source == "Box.Face2", "orientation shows B and source")
-    model = local_model.find(job, "Lateral X")
-    check(model in job.Model.Group, "local model added to Job.Model")
+    check([o.Label for o in group.Group if hasattr(o, "IndexedCAMData")] == ["Lateral X"], "one object per orientation")
+    first_orientation = [o for o in group.Group if hasattr(o, "IndexedCAMData")][0]
+    check(first_orientation.B == 90.0 and first_orientation.Source == "%s.Face2" % clone.Name,
+          "orientation shows B and source")
+    model = local_model.find(orientations_group(job), "Lateral X")
+    check(model in orientations_group(job).Group, "local model kept out of Job.Model")
     check(op1.IndexedSetup == "Lateral X" and op3.IndexedSetup == "Lateral X",
           "operations chosen at creation are bound")
     check(op1.Base[0][0] is model and op1.Base[0][1] == ("Face6",),
           "Base moved to the local model, same face")
     check(abs(model.Shape.Faces[1].CenterOfMass.z) < 1e-6, "setup face is at local Z=0")
     check(len(manager.get("Lateral X").operations) == 2, "Setup.operations updated")
+    check(model not in job.Model.Group and len(job.Model.Group) == 1,
+          "Job.Model keeps only the part, so the Job stock is not inflated")
+    stock_box = job.Stock.Shape.BoundBox
+    check(abs(stock_box.XLength - 62) < 1e-6 and abs(stock_box.ZLength - 32) < 1e-6,
+          "Job stock still fits the part: %s" % stock_box)
 
     top = make_setup("Face6", "Superior", [])
-    check(local_model.find(job, "Superior") is not None and top.operations == [],
+    check(local_model.find(orientations_group(job), "Superior") is not None and top.operations == [],
           "orientation without operations still gets its local model")
     ctx.assigner.assign("Superior", [op2])
     check(op2.IndexedSetup == "Superior", "operation associated afterwards")
+    check(op2.Base and op2.Base[0][0] is local_model.find(orientations_group(job), "Superior")
+          and op2.Base[0][1] == ("Face6",), "operation without Base gets the Setup's own face")
+    lateral = local_model.find(orientations_group(job), "Lateral X").Shape.BoundBox
+    check(abs(lateral.ZMax) < 1e-6, "setup face is at local Z=0 even if the source is offset: %s" % lateral.ZMax)
+    check(len(op2.Path.Commands) > 2, "operation without Base now has a real path")
     check(max(zs(op2)) == 40.0 or max(zs(op2)) == 10.0, "heights follow the local model: %s" % zs(op2))
-    check(len(group.Group) == 2 and [o.Label for o in group.Group] == ["Lateral X", "Superior"],
+    check([o.Label for o in group.Group if hasattr(o, "IndexedCAMData")] == ["Lateral X", "Superior"],
           "two orientations, one object each")
     check(len([o for o in doc.Objects if hasattr(o, "IndexedCAMJob")]) == 0, "IndexedCAM created no Job")
     check(len(find_jobs(doc)) == 1, "single Job")
@@ -158,8 +172,8 @@ try:
     check(items[0].end is not None and items[1].start.b == manager.get("Superior").b,
           "step poses use the Setup angles")
     log("start", items[0].start, "end", items[0].end)
-    check(60.0 < items[0].start.point[0] <= 70.5 and items[0].start.b == 90.0,
-          "step start lies above the X=60 face, in part coordinates")
+    check(70.0 < items[0].start.point[0] <= 80.5 and items[0].start.b == 90.0,
+          "step start lies above the X=70 face (part placed at x=10), in part coordinates")
     from IndexedCAM.Machine.envelope import Envelope
 
     env = bridge.envelope_for(op1, Envelope())
@@ -227,8 +241,8 @@ try:
     check({s.setup for s in program.steps()} == {"Cara Lateral", "Superior"},
           "program follows the Setup rename")
     check(renamed.name == "Cara Lateral" and "Lateral X" not in manager, "Setup renamed")
-    model = local_model.find(job, "Cara Lateral")
-    check(model is not None and local_model.find(job, "Lateral X") is None, "local model follows")
+    model = local_model.find(orientations_group(job), "Cara Lateral")
+    check(model is not None and local_model.find(orientations_group(job), "Lateral X") is None, "local model follows")
     check(model.Label == "IndexedCAM_Local_Cara Lateral", "local model label updated")
     check([o.Name for o in bridge.operations_of("Cara Lateral")] == ops_before,
           "operations follow the new name")
@@ -244,7 +258,7 @@ try:
     rctx = build_context(reopened, rjob)
     check("Cara Lateral" in rctx.manager, "renamed orientation survives save/reload")
     check(orientations_group(rjob) is not None, "Orientations group survives reload inside the Job")
-    check(local_model.find(rjob, "Cara Lateral") is not None, "local model survives reload")
+    check(local_model.find(orientations_group(rjob), "Cara Lateral") is not None, "local model survives reload")
     check(len(rctx.program) == 3, "program survives reload")
     check(len(rctx.bridge.operations_of("Cara Lateral")) == 2,
           "operations keep the new name after reload")

@@ -40,6 +40,7 @@ try:
     from IndexedCAM.Core.cam_bridge import CamBridge, CamBridgeError
     from IndexedCAM.Core.indexed_setup import IndexedSetup
     from IndexedCAM.Core import local_model
+    from IndexedCAM.Core.document_storage import orientations_group
     from IndexedCAM.Machine.bc_head import normal_to_bc
 
     def setup(name, normal, origin=(0, 0, 0)):
@@ -58,7 +59,7 @@ try:
     sa, sb = setup("TopFace", (0, 0, 1)), setup("SideX", (1, 0, 0))
     ma = bridge.attach_setup(box, sa)
     mb = bridge.attach_setup(box, sb)
-    check(local_model.find(job, "SideX") is mb, "local model found by Setup name")
+    check(local_model.find(orientations_group(job), "SideX") is mb, "local model found by Setup name")
     check(abs(mb.Shape.BoundBox.ZMax - 60) < 1e-6, "SideX model: +X face brought to Z=60")
     check(abs(ma.Shape.BoundBox.ZMax - 30) < 1e-6, "TopFace model: Z=30")
 
@@ -97,7 +98,7 @@ try:
     doc2 = App.openDocument(path)
     doc2.recompute()
     job2 = [o for o in doc2.Objects if hasattr(o, "Operations") and hasattr(o, "Tools")][0]
-    mb2 = local_model.find(job2, "SideX")
+    mb2 = local_model.find(orientations_group(job2), "SideX")
     check(mb2 is not None and not mb2.Shape.isNull(), "local model rebuilt after reload")
     check(len(CamBridge(job2).operations_of("SideX")) == 1, "bound operation found after reload")
     log("PASS")

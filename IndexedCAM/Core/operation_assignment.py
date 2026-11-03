@@ -66,7 +66,7 @@ class OperationAssigner:
             )
         self._bridge.attach_setup(source, setup)
         for operation in operations:
-            self._bridge.bind_operation(operation, setup.name)
+            self._bridge.bind_operation(operation, setup.name, reference.face)
         self.sync_operations()
 
     def sync_operations(self) -> None:

@@ -169,7 +169,7 @@ cat /tmp/bridge.log
 1. Banco **CAM**: crea un **Job** con tu pieza y añade operaciones (Face, Pocket, Profile…) con su herramienta, como siempre.
 2. Banco **IndexedCAM**: selecciona una cara y pulsa **Face Orientation**. Si el documento tiene varios Jobs se elige a cuál pertenece (se deduce de la selección si la pieza solo está en uno).
 3. Escribe el nombre y marca las operaciones del Job que quieres mecanizar orientadas a esa cara (puedes dejarlas sin marcar).
-4. En el árbol aparece el grupo **Orientations** junto al Job, con un objeto por orientación (B, C y origen). Las operaciones marcadas tienen la propiedad `IndexedSetup` y su Base está en el clon local (`IndexedCAM_Local_<nombre>`, dentro de `Job.Model`).
+4. En el árbol aparece el grupo **Orientations** junto al Job, con un objeto por orientación (B, C y origen). Las operaciones marcadas tienen la propiedad `IndexedSetup` y su Base está en el clon local (`IndexedCAM_Local_<nombre>`, en el grupo `Orientations`, no en `Job.Model` para no deformar el material en bruto del Job).
 5. **Assign Operation** asocia después otras operaciones a una orientación existente. En CAM cada trayectoria está en el sistema local de su Setup (cara en Z=0).
 
 Sin Job, los comandos avisan de que hay que crearlo antes en el banco CAM.

@@ -1,15 +1,17 @@
 """Bridge between IndexedCAM Setups and an existing FreeCAD CAM Job.
 
 The Job is created by the user in CAM. It holds every Setup: each Setup contributes a lightweight
-``LocalModel`` to ``Job.Model``, and each CAM operation of that Setup uses a
+``LocalModel`` kept in the Job's ``Orientations`` group (not in ``Job.Model``: the Job's stock
+is the bounding box of ``Job.Model`` and would grow with every rotated copy), and each CAM operation of that Setup uses a
 face of its local model as ``Base``. Public CAM APIs only; CAM is not modified.
 """
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, Optional
 
 from IndexedCAM.Core import local_model
+from IndexedCAM.Core.document_storage import ensure_orientations_group, orientations_group
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
 from IndexedCAM.Core.program import Step
@@ -31,21 +33,25 @@ class CamBridge:
         self._safe_offset = safe_offset
         self._clearance_offset = clearance_offset
 
+    def _model(self, setup_name: str) -> Any:
+        return local_model.find(orientations_group(self.job), setup_name)
+
     def attach_setup(self, source: Any, setup: IndexedSetup) -> Any:
         """Create (or update) the local model of ``setup`` and add it to the Job."""
-        model = local_model.find(self.job, setup.name)
+        model = self._model(setup.name)
         if model is None:
             model = local_model.create(self._document, source, setup)
         else:
             local_model.update(model, setup)
-        if model not in self.job.Model.Group:
-            self.job.Model.addObject(model)
+        group = ensure_orientations_group(self.job)
+        if model not in group.Group:
+            group.addObject(model)
         self._document.recompute()
         return model
 
     def detach_setup(self, setup_name: str) -> None:
         """Remove the local model of a Setup that has no operations bound."""
-        model = local_model.find(self.job, setup_name)
+        model = self._model(setup_name)
         if model is None:
             return
         bound = self.operations_of(setup_name)
@@ -55,7 +61,6 @@ class CamBridge:
                     setup_name, ", ".join(op.Label for op in bound)
                 )
             )
-        self.job.Model.removeObject(model)
         self._document.removeObject(model.Name)
 
     def rename_setup(self, old: str, new: str) -> None:
@@ -64,7 +69,7 @@ class CamBridge:
         Object names stay (expressions and CAM refer to them); only the owning
         Setup name and the visible label change.
         """
-        model = local_model.find(self.job, old)
+        model = self._model(old)
         if model is not None:
             local_model.rename(model, new)
         for operation in self.operations_of(old):
@@ -101,13 +106,15 @@ class CamBridge:
             if getattr(op, OPERATION_SETUP_PROPERTY, None) == setup_name
         ]
 
-    def bind_operation(self, operation: Any, setup_name: str) -> None:
+    def bind_operation(self, operation: Any, setup_name: str, face: Optional[str] = None) -> None:
         """Orient an existing Job operation to a Setup.
 
         Its Base faces are moved to the same faces of the Setup's local model
-        (face names are shared with the source) and its heights follow it.
+        (face names are shared with the source). An operation without Base would
+        machine the whole Job model, so it gets ``face`` (the Setup's own face).
+        Its heights follow the local model.
         """
-        model = local_model.find(self.job, setup_name)
+        model = self._model(setup_name)
         if model is None:
             raise CamBridgeError("Setup '{}' has no local model".format(setup_name))
         if not hasattr(operation, OPERATION_SETUP_PROPERTY):
@@ -121,12 +128,14 @@ class CamBridge:
             for _, names in base:
                 subs.extend(n for n in names if n not in subs)
             operation.Base = [(model, subs)]
+        elif face:
+            operation.Base = [(model, [face])]
         self.refresh_operation(operation)
 
     def refresh_operation(self, operation: Any) -> OperationHeights:
         """Bind the operation heights to its Setup's local model (and return them)."""
         name = getattr(operation, OPERATION_SETUP_PROPERTY, None)
-        model = local_model.find(self.job, name) if name else None
+        model = self._model(name) if name else None
         if model is None:
             raise CamBridgeError("Operation '{}' is not bound to a Setup".format(operation.Label))
         heights = heights_above(
