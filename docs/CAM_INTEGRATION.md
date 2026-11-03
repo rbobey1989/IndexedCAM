@@ -159,3 +159,16 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 **Carrera lineal:** `BCMachine.travel` (`TravelBox`, opcional) limita la posición del pivote de B en coordenadas de pieza (se asume G54 en el origen de la pieza); el planificador rechaza muestras fuera de la caja ("fuera de la carrera lineal").
 
 Verificado con `tests/freecad/check_collision.py` y `check_assign_operation.py`.
+
+## Herramienta inclinada en el simulador CAM nativo
+
+Al activar el banco IndexedCAM se envuelve `PathSimulation.PerformCut` del
+simulador **legacy** de CAM (sin tocar su código): antes de cada operación
+indexada reproduce, tick a tick, la transición de B/C que lleva a ella y, durante la
+operación, inclina la propia `CutTool` del simulador a su B/C alrededor de la punta
+(`Core/simulation_plan.py`, `Gui/native_simulator.py`).
+
+Límites: solo el simulador *Legacy* (`CAM_Simulator`) dibuja un objeto `CutTool`; el
+simulador OpenGL no es inclinable. El material que retira el simulador asume
+herramienta vertical, así que para operaciones inclinadas es solo orientativo.
+Si el plan falla, el simulador sigue funcionando sin inclinación.
