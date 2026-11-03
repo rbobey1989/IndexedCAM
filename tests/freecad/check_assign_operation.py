@@ -130,6 +130,15 @@ try:
     lateral = local_model.find(orientations_group(job), "Lateral X").Shape.BoundBox
     check(abs(lateral.ZMax) < 1e-6, "setup face is at local Z=0 even if the source is offset: %s" % lateral.ZMax)
     check(len(op2.Path.Commands) > 2, "operation without Base now has a real path")
+    face6 = clone.Shape.getElement("Face6")
+    placed = [op2.Placement.multVec(App.Vector(c.Parameters.get("X", 0), c.Parameters.get("Y", 0), c.Parameters["Z"]))
+              for c in op2.Path.Commands if "Z" in c.Parameters]
+    top = clone.Shape.BoundBox.ZMax
+    check(all(p.z >= top - 1e-6 for p in placed) and any(abs(p.z - top) < 1e-6 for p in placed),
+          "placed path lies on the face it machines, above the part")
+    lat = op1.Placement.multVec(App.Vector(0, 0, 10))
+    check(abs(lat.x - (clone.Shape.BoundBox.XMax + 10)) < 1e-6,
+          "lateral operation is drawn out of the X face, tool pointing +X")
     check(max(zs(op2)) == 40.0 or max(zs(op2)) == 10.0, "heights follow the local model: %s" % zs(op2))
     check([o.Label for o in group.Group if hasattr(o, "IndexedCAMData")] == ["Lateral X", "Superior"],
           "two orientations, one object each")

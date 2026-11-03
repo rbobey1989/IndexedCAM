@@ -40,6 +40,7 @@ Reglas derivadas:
 
 - Toda operación debe llevar `Base` explícito (cara del clon de su Setup); una operación sin Base usaría todos los clones superpuestos.
 - Los clones locales viven en el grupo `Orientations`, **no** en `Job.Model`: `StockFromBase` calcula el bruto con la caja envolvente de `Job.Model.Group` y, con copias giradas dentro, el bruto crecía (visto en un archivo real: 109×64×94 mm para una pieza de 60×40×30) y falseaba `FinalDepth`.
+- CAM dibuja toda trayectoria en el marco del Job (herramienta +Z), lejos de la pieza y del bruto. Al asociar una operación se fija su `Placement` a la inversa del marco local del Setup: la trayectoria se ve sobre la cara que mecaniza y con la herramienta apuntando según B/C. `Path.Commands` sigue en el marco local (lo que usan el programa, la previsualización y el post). Los post nativos que aplican `getPathWithPlacement` verían coordenadas de pieza; el post de IndexedCAM (#19) usará `Path.Commands`.
 - Una operación sin `Base` mecanizaría todo el modelo; al asociarla se le asigna la cara con la que se creó la orientación.
 - El marco del Setup está en coordenadas de documento, así que `LocalModel` conserva el `Placement` de su fuente (el clon del Job suele estar desplazado); antes la cara quedaba en Z=-1 en lugar de Z=0.
 - Los clones se ocultan en la vista; el modelo original sigue siendo el visible.

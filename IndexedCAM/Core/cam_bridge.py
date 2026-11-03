@@ -150,6 +150,11 @@ class CamBridge:
             ("ClearanceHeight", self._clearance_offset),
         ):
             operation.setExpression(prop, "{} + {} mm".format(top, offset))
+        # CAM draws every path in the Job frame (tool along +Z). The operation's
+        # Placement moves it back onto the part, so the path is seen on the face
+        # it machines, with the tool pointing along the Setup's axis. The Path
+        # itself stays in the local frame.
+        operation.Placement = model.LocalPlacement.inverse()
         operation.touch()
         self._document.recompute()
         return heights
