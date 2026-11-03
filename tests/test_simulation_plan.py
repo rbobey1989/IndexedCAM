@@ -50,3 +50,12 @@ def test_script_reset_replays():
     script.reset()
     script.enter("Op2")
     assert len(script._queue) == 2
+
+
+def test_script_pending_and_skip():
+    script = TiltScript(_plan())
+    assert not script.pending()
+    script.enter("Op2")
+    assert script.pending()
+    script.skip()
+    assert not script.pending()
