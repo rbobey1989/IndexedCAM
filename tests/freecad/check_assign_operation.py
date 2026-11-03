@@ -212,6 +212,7 @@ try:
     check(all(c.error is None for c in clips if c.kind == "transition"),
           "transitions are collision-free: %s" % [c.error for c in clips])
     check(all(len(c) > 0 for c in clips), "every clip has samples")
+    check(all("Ø" in c.tool for c in clips), "every clip names its tool: %s" % [c.tool for c in clips][:1])
     log("first collisions:", [c.first_collision() for c in clips])
     scene = Gui.ActiveDocument.ActiveView.getSceneGraph()
     count = scene.getNumChildren()

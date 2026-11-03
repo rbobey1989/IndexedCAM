@@ -41,6 +41,7 @@ class Clip:
     envelope: Envelope
     probe: Probe
     error: Optional[str] = None
+    tool: str = ""
     _cache: Dict[int, Optional[str]] = field(default_factory=dict, repr=False)
 
     def __len__(self) -> int:
@@ -112,6 +113,10 @@ class PreviewBuilder:
             clips.append(self._operation(index, item))
         return clips
 
+    def _tool_label(self, operation: str) -> str:
+        label = getattr(self._resources, "tool_label", None)
+        return label(operation) if label is not None else describe_tool(self._resources.envelope(operation))
+
     def _transition(self, index: int, item: ChainedStep) -> Clip:
         assert item.previous is not None and item.start is not None
         operation = item.step.operation
@@ -126,6 +131,7 @@ class PreviewBuilder:
             self._resources.envelope(operation),
             self._resources.checker(operation).collision,
             result.error,
+            self._tool_label(operation),
         )
 
     def _operation(self, index: int, item: ChainedStep) -> Clip:
@@ -141,7 +147,17 @@ class PreviewBuilder:
             frames,
             self._resources.envelope(step.operation),
             self._resources.checker(step.operation).cutting_collision,
+            tool=self._tool_label(step.operation),
         )
+
+
+def describe_tool(envelope: Envelope) -> str:
+    """Short description of the cutting tool of ``envelope``."""
+    tool = envelope.tool
+    text = "Ø{:g} mm, largo {:g} mm".format(2 * tool.radius, tool.length)
+    if envelope.cutting_length is not None:
+        text += ", corte {:g} mm".format(envelope.cutting_length)
+    return text
 
 
 def sphere_for(bound_box: Tuple[Vector, Vector], envelope: Envelope, margin: float = 10.0):

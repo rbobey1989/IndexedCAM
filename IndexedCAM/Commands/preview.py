@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from IndexedCAM.Core.collision_checker import checker_for_operation
 from IndexedCAM.Core.operation_assignment import parse_source
 from IndexedCAM.Core.path_endpoints import path_points
-from IndexedCAM.Core.preview import Clip, PreviewBuilder, sphere_for
+from IndexedCAM.Core.preview import Clip, PreviewBuilder, describe_tool, sphere_for
 from IndexedCAM.Core.transition_planner import TransitionPlanner
 from IndexedCAM.Machine.bc_machine import BCMachine
 from IndexedCAM.Machine.envelope import Envelope
@@ -37,6 +37,12 @@ class DocumentResources:
 
     def envelope(self, operation: str) -> Envelope:
         return self._bridge.envelope_for(self._operation(operation), self._base)
+
+    def tool_label(self, operation: str) -> str:
+        controller = getattr(self._operation(operation), "ToolController", None)
+        name = getattr(controller, "Label", "")
+        detail = describe_tool(self.envelope(operation))
+        return "{} ({})".format(name, detail) if name else detail
 
     def checker(self, operation: str) -> Any:
         if operation not in self._checkers:
@@ -140,7 +146,7 @@ class PreviewWindow:
         layout = QtWidgets.QVBoxLayout(self._dialog)
         self._list = QtWidgets.QListWidget()
         for clip in self._clips:
-            self._list.addItem(clip.title + ("  ⚠" if clip.error else ""))
+            self._list.addItem(clip.title + ("  ⚠" if clip.error else "") + ("\n    " + clip.tool if clip.tool else ""))
         self._status = QtWidgets.QLabel()
         self._slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._play = QtWidgets.QPushButton("▶ Reproducir")
@@ -193,6 +199,8 @@ class PreviewWindow:
         hit = clip.collision(index)
         self._view.show_tool(clip.poses(index), collides=bool(hit))
         text = "{}  B={:.1f} C={:.1f}  {}".format(clip.title, frame.b, frame.c, frame.label)
+        if clip.tool:
+            text += "\nHerramienta: " + clip.tool
         if hit:
             text += "\nCOLISIÓN: " + hit
         elif clip.error:

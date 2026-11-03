@@ -129,3 +129,12 @@ def test_cylinder_orientation():
     assert (middle, length, direction) == ((0, 0, 5), 10.0, (0.0, 0.0, 1.0))
     with pytest.raises(ValueError):
         cylinder_orientation((1, 1, 1), (1, 1, 1))
+
+
+def test_describe_tool_includes_diameter_and_flute():
+    from IndexedCAM.Core.preview import describe_tool
+    from IndexedCAM.Machine.bc_machine import BCMachine
+
+    envelope = BCMachine().envelope.with_tool(3.0, 40.0, 12.0)
+    assert describe_tool(envelope) == "Ø6 mm, largo 40 mm, corte 12 mm"
+    assert describe_tool(BCMachine().envelope.with_tool(2.5, 30.0)) == "Ø5 mm, largo 30 mm"
