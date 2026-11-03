@@ -25,7 +25,7 @@ El postprocesador genera los movimientos de posicionamiento necesarios antes de 
 
 `SetupManager` (`IndexedCAM/Core/setup_manager.py`) mantiene una lista ordenada de `IndexedSetup` con nombres únicos (sin distinguir mayúsculas): `add`, `get`, `rename`, `delete`, `move`, `reorder`, `update` y `unique_name`. Cada operación valida antes de persistir, de modo que un error no altera el estado.
 
-La persistencia es intercambiable (`SetupStorage`). `JobStorage` guarda las orientaciones **dentro del Job de CAM** que creó el usuario: un grupo `Orientations` (en `job.Group`, creado al primer guardado) con un objeto por orientación (JSON oculto más B, C y origen de solo lectura). El programa se guarda en el mismo grupo (`JobProgramStorage`). Viaja dentro del `.FCStd`. `Core/job_context.py` resuelve el Job: el relacionado con la selección, el único del documento o el que elija el usuario; IndexedCAM nunca crea el Job. `DocumentStorage` (contenedor a nivel de documento) y `MemoryStorage` se usan en tests.
+La persistencia es intercambiable (`SetupStorage`). `JobStorage` guarda las orientaciones **dentro del Job de CAM** que creó el usuario: un grupo `Orientations` (en `job.Group`, creado al primer guardado) con un grupo por orientación que contiene su modelo local (JSON oculto más B, C y origen de solo lectura). El programa se guarda en el mismo grupo (`JobProgramStorage`). Viaja dentro del `.FCStd`. `Core/job_context.py` resuelve el Job: el relacionado con la selección, el único del documento o el que elija el usuario; IndexedCAM nunca crea el Job. `DocumentStorage` (contenedor a nivel de documento) y `MemoryStorage` se usan en tests.
 
 ## Visualización
 

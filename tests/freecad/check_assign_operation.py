@@ -51,6 +51,9 @@ try:
     from IndexedCAM.Core.job_context import JobError, find_jobs, resolve_job
     from IndexedCAM.Core.operation_assignment import AssignmentError, AssignOperationWorkflow
 
+    from IndexedCAM.Gui import restore_observer
+
+    restore_observer.install()
     face_orientation.register()
     assign_operation.register()
     check(assign_operation.COMMAND_NAME in Gui.listCommands(), "command registered")
@@ -107,7 +110,10 @@ try:
     check(first_orientation.B == 90.0 and first_orientation.Source == "%s.Face2" % clone.Name,
           "orientation shows B and source")
     model = local_model.find(orientations_group(job), "Lateral X")
-    check(model in orientations_group(job).Group, "local model kept out of Job.Model")
+    check(model in first_orientation.Group and model not in orientations_group(job).Group,
+          "local model is nested under its orientation")
+    check(model.Visibility is False and first_orientation.Visibility is False,
+          "orientation and local model start hidden")
     check(op1.IndexedSetup == "Lateral X" and op3.IndexedSetup == "Lateral X",
           "operations chosen at creation are bound")
     check(op1.Base[0][0] is model and op1.Base[0][1] == ("Face6",),
@@ -267,7 +273,13 @@ try:
     rctx = build_context(reopened, rjob)
     check("Cara Lateral" in rctx.manager, "renamed orientation survives save/reload")
     check(orientations_group(rjob) is not None, "Orientations group survives reload inside the Job")
-    check(local_model.find(orientations_group(rjob), "Cara Lateral") is not None, "local model survives reload")
+    reloaded = local_model.find(orientations_group(rjob), "Cara Lateral")
+    check(reloaded is not None, "local model survives reload")
+    check(all(not o.Visibility for o in reopened.Objects
+              if hasattr(o, "LocalPlacement") or hasattr(o, "IndexedCAMData")),
+          "local models and orientations stay hidden after reopening")
+    check(len([o for o in reopened.Objects if hasattr(o, "LocalPlacement")])
+          == len(rctx.manager.list()), "one local model per orientation after reload")
     check(len(rctx.program) == 3, "program survives reload")
     check(len(rctx.bridge.operations_of("Cara Lateral")) == 2,
           "operations keep the new name after reload")

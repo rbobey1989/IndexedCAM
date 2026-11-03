@@ -2,6 +2,10 @@
 
 import FreeCADGui as Gui
 
+from IndexedCAM.Gui import restore_observer
+
+restore_observer.install()
+
 
 class IndexedCAMWorkbench(Gui.Workbench):
     """Workbench entry point registered with FreeCAD."""

@@ -55,6 +55,7 @@ class LocalModel:
     def onDocumentRestored(self, obj: Any) -> None:
         obj.Proxy = self
         obj.setPropertyStatus("Shape", "Transient")
+        hide(obj)
         self.execute(obj)
 
     def dumps(self) -> None:
@@ -82,14 +83,22 @@ def create(document: Any, source: Any, setup: IndexedSetup) -> Any:
     obj = document.addObject("Part::FeaturePython", OBJECT_PREFIX + setup.name)
     obj.Label = OBJECT_PREFIX + setup.name
     LocalModel(obj, source, setup)
-    if getattr(obj, "ViewObject", None) is not None:
-        obj.ViewObject.Visibility = False
+    hide(obj)
     return obj
 
 
+def hide(obj: Any) -> None:
+    """Local models are helpers for CAM: never shown in the 3D view by default."""
+    obj.Visibility = False
+    view = getattr(obj, "ViewObject", None)
+    if view is not None:
+        view.Visibility = False
+
+
 def find(group: Any, setup_name: str) -> Any:
-    """Return the local model of ``setup_name`` inside ``group``, or None."""
-    for obj in getattr(group, "Group", ()):
-        if getattr(obj, "SetupName", None) == setup_name and hasattr(obj, "LocalPlacement"):
-            return obj
+    """Local model of ``setup_name`` in ``group`` (inside its orientation), or None."""
+    for child in getattr(group, "Group", ()):
+        for obj in (child, *getattr(child, "Group", ())):
+            if getattr(obj, "SetupName", None) == setup_name and hasattr(obj, "LocalPlacement"):
+                return obj
     return None

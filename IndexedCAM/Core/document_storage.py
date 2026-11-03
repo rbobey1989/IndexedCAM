@@ -52,6 +52,7 @@ class DocumentStorage:
 GROUP_NAME = "Orientations"
 GROUP_MARKER = "IndexedCAMOrientations"
 ORIENTATION_PREFIX = "IndexedCAM_Orientation"
+ORIENTATION_TYPE = "App::DocumentObjectGroupPython"
 ORIENTATION_DATA = "IndexedCAMData"
 
 
@@ -71,14 +72,31 @@ def ensure_orientations_group(job: Any) -> Any:
         setattr(group, GROUP_MARKER, True)
         group.Label = GROUP_NAME
         job.addObject(group)
+        hide_group(group)
     return group
+
+
+def hide_group(group: Any) -> None:
+    """Groups propagate their visibility to children when a file is reopened,
+    so the groups holding the (hidden) local models must be hidden too."""
+    group.Visibility = False
+    if getattr(group, "ViewObject", None) is not None:
+        group.ViewObject.Visibility = False
+
+
+def orientation_of(group: Any, setup_name: str) -> Any:
+    """The orientation object of ``setup_name`` inside ``group``, or None."""
+    for child in getattr(group, "Group", ()):
+        if hasattr(child, ORIENTATION_DATA) and json.loads(child.IndexedCAMData).get("name") == setup_name:
+            return child
+    return None
 
 
 class JobStorage:
     """SetupStorage keeping each orientation as an object inside its CAM Job.
 
     The Job gets an ``Orientations`` group (created on the first save) with one
-    child per orientation; the full data stays in a hidden JSON property and
+    child per orientation (itself a group holding the Setup's local model); the full data stays in a hidden JSON property and
     B/C/Source are shown read-only. Children are reused by position, so a
     rename or reorder never leaves stale objects.
     """
@@ -101,15 +119,23 @@ class JobStorage:
             return
         group = ensure_orientations_group(self._job)
         document = self._job.Document
-        for index, data in enumerate(setups):
-            if index < len(children):
-                child = children[index]
-            else:
-                child = document.addObject("App::FeaturePython", ORIENTATION_PREFIX)
+        by_name = {json.loads(c.IndexedCAMData).get("name"): c for c in children}
+        # a child keeps its identity (and the local model it holds) by name; a
+        # renamed Setup takes over the child that is left without a match
+        matched = [by_name.get(data.get("name")) for data in setups]
+        spare = [c for c in children if all(c is not m for m in matched)]
+        for data, child in zip(setups, matched):
+            if child is None and spare:
+                child = spare.pop(0)
+            if child is None:
+                child = document.addObject(ORIENTATION_TYPE, ORIENTATION_PREFIX)
                 self._add_properties(child)
                 group.addObject(child)
+                hide_group(child)
             self._fill(child, data)
-        for child in children[len(setups):]:
+        for child in spare:
+            for nested in list(getattr(child, "Group", ())):
+                document.removeObject(nested.Name)
             document.removeObject(child.Name)
 
     @staticmethod

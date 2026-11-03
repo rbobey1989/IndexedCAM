@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from IndexedCAM.Core import local_model
-from IndexedCAM.Core.document_storage import ensure_orientations_group, orientations_group
+from IndexedCAM.Core.document_storage import ensure_orientations_group, orientation_of, orientations_group
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
 from IndexedCAM.Core.program import Step
@@ -44,8 +44,12 @@ class CamBridge:
         else:
             local_model.update(model, setup)
         group = ensure_orientations_group(self.job)
-        if model not in group.Group:
-            group.addObject(model)
+        owner = orientation_of(group, setup.name)
+        # a model not yet inside an orientation (or a legacy orientation that is
+        # not a group) stays directly in the Orientations group
+        target = owner if owner is not None and hasattr(owner, "addObject") else group
+        if model not in target.Group and not any(model in getattr(c, "Group", ()) for c in group.Group):
+            target.addObject(model)
         self._document.recompute()
         return model
 
