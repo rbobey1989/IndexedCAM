@@ -213,6 +213,7 @@ try:
           "transitions are collision-free: %s" % [c.error for c in clips])
     check(all(len(c) > 0 for c in clips), "every clip has samples")
     check(all("Ø" in c.tool for c in clips), "every clip names its tool: %s" % [c.tool for c in clips][:1])
+    check(all(c.tool_mesh and len(c.tool_mesh[1]) > 0 for c in clips), "every clip carries the real tool shape")
     from IndexedCAM.Core.stock_timeline import StockTimeline
     import time as _time
 

@@ -31,12 +31,21 @@ class DocumentResources:
         self._step_setups = step_setups
         self._setups = setups
         self._checkers: Dict[str, Any] = {}
+        self._meshes: Dict[Any, Any] = {}
 
     def _operation(self, name: str) -> Any:
         return self._document.getObject(name)
 
     def envelope(self, operation: str) -> Envelope:
         return self._bridge.envelope_for(self._operation(operation), self._base)
+
+    def tool_mesh(self, operation: str) -> Any:
+        """Triangles of the real tool shape (tip at the origin, axis +Z), cached per tool."""
+        tool = getattr(getattr(self._operation(operation), "ToolController", None), "Tool", None)
+        key = getattr(tool, "Name", None) or id(tool)
+        if key not in self._meshes:
+            self._meshes[key] = tessellate_tool(tool)
+        return self._meshes[key]
 
     def tool_label(self, operation: str) -> str:
         controller = getattr(self._operation(operation), "ToolController", None)
@@ -55,6 +64,18 @@ class DocumentResources:
 
     def local_path(self, operation: str) -> Sequence[Any]:
         return path_points(self._operation(operation).Path.Commands, step=2.0)
+
+
+def tessellate_tool(tool: Any, tolerance: float = 0.05) -> Any:
+    """(vertices, triangles) of the CAM tool shape, or None if it has none."""
+    try:
+        shape = tool.Shape
+        if shape is None or shape.isNull():
+            return None
+        vertices, faces = shape.tessellate(tolerance)
+    except Exception:
+        return None
+    return [(v.x, v.y, v.z) for v in vertices], [tuple(f) for f in faces]
 
 
 def build_clips(document: Any, manager: Any, program: Any, bridge: Any, machine: Optional[BCMachine] = None) -> List[Clip]:
@@ -267,7 +288,7 @@ class PreviewWindow:
             return
         frame = clip.frames[index]
         hit = clip.collision(index)
-        self._view.show_tool(clip.poses(index), collides=bool(hit))
+        self._view.show_tool(clip.poses(index), collides=bool(hit), mesh=clip.tool_mesh)
         self._update_stock(index, force)
         text = "{}  B={:.1f} C={:.1f}  {}".format(clip.title, frame.b, frame.c, frame.label)
         if clip.tool:

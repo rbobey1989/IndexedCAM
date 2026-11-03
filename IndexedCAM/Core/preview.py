@@ -9,7 +9,7 @@ is cheap and the viewer only pays for the samples it actually shows.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import local_to_part
@@ -42,6 +42,7 @@ class Clip:
     probe: Probe
     error: Optional[str] = None
     tool: str = ""
+    tool_mesh: Any = None
     _cache: Dict[int, Optional[str]] = field(default_factory=dict, repr=False)
 
     def __len__(self) -> int:
@@ -113,6 +114,10 @@ class PreviewBuilder:
             clips.append(self._operation(index, item))
         return clips
 
+    def _tool_mesh(self, operation: str) -> Any:
+        mesh = getattr(self._resources, "tool_mesh", None)
+        return mesh(operation) if mesh is not None else None
+
     def _tool_label(self, operation: str) -> str:
         label = getattr(self._resources, "tool_label", None)
         return label(operation) if label is not None else describe_tool(self._resources.envelope(operation))
@@ -132,6 +137,7 @@ class PreviewBuilder:
             self._resources.checker(operation).collision,
             result.error,
             self._tool_label(operation),
+            self._tool_mesh(operation),
         )
 
     def _operation(self, index: int, item: ChainedStep) -> Clip:
@@ -148,6 +154,7 @@ class PreviewBuilder:
             self._resources.envelope(step.operation),
             self._resources.checker(step.operation).cutting_collision,
             tool=self._tool_label(step.operation),
+            tool_mesh=self._tool_mesh(step.operation),
         )
 
 

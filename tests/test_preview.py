@@ -138,3 +138,26 @@ def test_describe_tool_includes_diameter_and_flute():
     envelope = BCMachine().envelope.with_tool(3.0, 40.0, 12.0)
     assert describe_tool(envelope) == "Ø6 mm, largo 40 mm, corte 12 mm"
     assert describe_tool(BCMachine().envelope.with_tool(2.5, 30.0)) == "Ø5 mm, largo 30 mm"
+
+
+def test_clips_carry_the_tool_mesh_of_their_operation():
+    class MeshResources(Resources):
+        def tool_mesh(self, operation):
+            return ("mesh-" + operation, [])
+
+    checker = Checker()
+    program = Program(MemoryProgramStorage())
+    for step in (Step("Top", "a"), Step("Side", "b")):
+        program.add(step)
+    s = setups()
+    items = chain(program, s, {"a": ((0, 0, 10), (5, 0, 0)), "b": ((0, 0, 10), (5, 0, 0))})
+    sphere = sphere_for(((0, 0, 0), (60, 40, 30)), Envelope())
+    clips = PreviewBuilder(
+        s, MeshResources(checker), lambda op: TransitionPlanner(BCMachine(), checker, sphere)
+    ).build(items)
+    assert [c.tool_mesh[0] for c in clips] == ["mesh-a", "mesh-b", "mesh-b"]
+
+
+def test_clips_without_tool_mesh_fall_back_to_cylinders():
+    clips, _ = build()
+    assert all(c.tool_mesh is None for c in clips)

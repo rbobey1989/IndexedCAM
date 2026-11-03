@@ -34,12 +34,49 @@ def cylinder_orientation(start: Vector, end: Vector) -> Tuple[Vector, float, Vec
     return midpoint, length, tuple(d / length for d in delta)  # type: ignore[return-value]
 
 
-def build_tool_node(poses: Sequence[CylinderPose], collides: bool = False) -> Any:
-    """SoSeparator with one translucent cylinder per pose (red when ``collides``)."""
+TOOL_NAMES = ("tool", "shank")
+
+
+def build_mesh_node(mesh: Any, tip: Vector, direction: Vector, collides: bool = False) -> Any:
+    """The real tool shape placed with its tip at ``tip`` and axis along ``direction``."""
+    import numpy as np
+    from pivy import coin
+
+    vertices, triangles = mesh
+    part = coin.SoSeparator()
+    transform = coin.SoTransform()
+    transform.translation.setValue(*tip)
+    transform.rotation.setValue(coin.SbRotation(coin.SbVec3f(0, 0, 1), coin.SbVec3f(*direction)))
+    part.addChild(transform)
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*(COLLISION_COLOR if collides else COLORS.get("tool", (0.7, 0.7, 0.7))))
+    part.addChild(material)
+    points = coin.SoCoordinate3()
+    points.point.setValues(0, len(vertices), np.asarray(vertices, dtype=np.float32))
+    part.addChild(points)
+    faces = coin.SoIndexedFaceSet()
+    indices = np.full((len(triangles), 4), -1, dtype=np.int32)
+    indices[:, :3] = np.asarray(triangles, dtype=np.int32)
+    faces.coordIndex.setValues(0, indices.size, indices.reshape(-1))
+    part.addChild(faces)
+    return part
+
+
+def build_tool_node(poses: Sequence[CylinderPose], collides: bool = False, mesh: Any = None) -> Any:
+    """SoSeparator with one translucent cylinder per pose (red when ``collides``).
+
+    With ``mesh`` the cutting tool and its shank are drawn with the real tool
+    shape instead of cylinders (holder and head stay cylinders).
+    """
     from pivy import coin
 
     root = coin.SoSeparator()
     root.setName("IndexedCAM_Tool")
+    if mesh is not None and poses and poses[0].name == "tool":
+        tool = poses[0]
+        _, length, direction = cylinder_orientation(tool.start, tool.end)
+        root.addChild(build_mesh_node(mesh, tool.start, direction, collides))
+        poses = [p for p in poses if p.name not in TOOL_NAMES]
     for pose in poses:
         middle, length, direction = cylinder_orientation(pose.start, pose.end)
         part = coin.SoSeparator()
@@ -140,8 +177,8 @@ class ToolView:
     def show_path(self, points: Sequence[Vector]) -> None:
         self._replace("_path", build_path_node(points) if len(points) > 1 else None)
 
-    def show_tool(self, poses: Sequence[CylinderPose], collides: bool = False) -> None:
-        self._replace("_tool", build_tool_node(poses, collides))
+    def show_tool(self, poses: Sequence[CylinderPose], collides: bool = False, mesh: Any = None) -> None:
+        self._replace("_tool", build_tool_node(poses, collides, mesh))
 
     def show_stock(self, triangles: Any) -> None:
         self._replace("_stock", build_stock_node(triangles))
