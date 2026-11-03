@@ -160,3 +160,11 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 **Carrera lineal:** `BCMachine.travel` (`TravelBox`, opcional) limita la posición del pivote de B en coordenadas de pieza (se asume G54 en el origen de la pieza); el planificador rechaza muestras fuera de la caja ("fuera de la carrera lineal").
 
 Verificado con `tests/freecad/check_collision.py` y `check_assign_operation.py`.
+
+## Preview: herramienta por operación y stock tallado
+
+- Cada clip usa la herramienta del `ToolController` de **su** operación (radio, largo y longitud de corte); la lista y el estado del Preview muestran su nombre y dimensiones. La transición usa la herramienta de la operación a la que lleva (no se modela el cambio de herramienta).
+- El stock sale de `Job.Stock` y se voxeliza (`Core/voxel_stock.py`, `numpy`): máx. ~800 000 celdas (resolución ≈ 0,5 mm en una pieza de 60×40×30; menor si el bruto es grande). Si el bruto no es una caja, se enmascara con `isInside` con un máximo de 150 000 celdas.
+- `Core/stock_timeline.py` talla el stock con el eje real (B/C) y el cilindro de corte de cada operación; las transiciones no cortan. Guarda instantáneas al inicio de cada clip, así que el slider puede ir adelante y atrás. Durante la reproducción la malla se reconstruye unas 6 veces por segundo.
+- El Preview oculta `Job.Stock` mientras está abierto y lo restaura al cerrar. La casilla «Mostrar stock» lo activa o desactiva.
+- Límites: la fresa se modela como cilindro (sin esférica/cónica); la malla es en bloques; los G0 también tallan (si atraviesan material se verá); `Job.Stock` no se actualiza.

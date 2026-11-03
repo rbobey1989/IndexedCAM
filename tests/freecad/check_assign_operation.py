@@ -213,6 +213,31 @@ try:
           "transitions are collision-free: %s" % [c.error for c in clips])
     check(all(len(c) > 0 for c in clips), "every clip has samples")
     check(all("Ø" in c.tool for c in clips), "every clip names its tool: %s" % [c.tool for c in clips][:1])
+    from IndexedCAM.Core.stock_timeline import StockTimeline
+    import time as _time
+
+    stock = preview.stock_for_job(job)
+    check(stock is not None and stock.cells.size > 1000, "voxel stock built from the Job stock: %s" % (stock.cells.shape,))
+    full_volume = stock.volume()
+    timeline = StockTimeline(stock, clips)
+    started = _time.time()
+    timeline.final()
+    log("stock timeline final in %.2fs, removed %.1f mm3" % (_time.time() - started, full_volume - stock.volume()))
+    check(stock.volume() < full_volume, "program removes material from the stock")
+    timeline.show(0, 0)
+    check(abs(stock.volume() - full_volume) < full_volume * 0.05, "scrubbing back restores the stock")
+    from IndexedCAM.Gui.tool_view import build_stock_node
+
+    node = build_stock_node(stock.triangles())
+    check(node.getNumChildren() == 4, "stock node has material, hints, points and faces")
+    window = preview.PreviewWindow(clips, preview.stock_for_job(job), job)
+    window.show()
+    window._slider.setValue(window._slider.maximum())
+    window._list.setCurrentRow(len(clips) - 1)
+    window._slider.setValue(window._slider.maximum())
+    check(window._view._stock is not None, "preview window shows the stock")
+    window.close()
+    check(window._view._stock is None, "closing the preview removes the stock")
     log("first collisions:", [c.first_collision() for c in clips])
     scene = Gui.ActiveDocument.ActiveView.getSceneGraph()
     count = scene.getNumChildren()

@@ -94,6 +94,11 @@ class Envelope:
             shank_radius,
         )
 
+    @property
+    def cutter(self) -> Cylinder:
+        """The cutting part of the tool (flutes), from the tip."""
+        return self._stack()[0]
+
     def _stack(self) -> List[Cylinder]:
         """Cylinders from the tip: cutting part, shank (if any), holder, head."""
         cutting = self.cutting_length

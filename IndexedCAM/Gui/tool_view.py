@@ -84,6 +84,39 @@ def build_path_node(points: Sequence[Vector], color: Tuple[float, float, float] 
     return root
 
 
+STOCK_COLOR = (0.85, 0.6, 0.25)
+STOCK_TRANSPARENCY = 0.35
+
+
+def build_stock_node(triangles: Any) -> Any:
+    """SoSeparator with the stock surface (an (N, 3, 3) array of triangles), flat shaded."""
+    import numpy as np
+    from pivy import coin
+
+    root = coin.SoSeparator()
+    root.setName("IndexedCAM_Stock")
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*STOCK_COLOR)
+    material.transparency.setValue(STOCK_TRANSPARENCY)
+    root.addChild(material)
+    hints = coin.SoShapeHints()
+    hints.vertexOrdering = coin.SoShapeHints.COUNTERCLOCKWISE
+    hints.shapeType = coin.SoShapeHints.SOLID
+    root.addChild(hints)
+    count = len(triangles)
+    if count:
+        points = coin.SoCoordinate3()
+        points.point.setValues(0, count * 3, np.ascontiguousarray(triangles.reshape(-1, 3), dtype=np.float32))
+        root.addChild(points)
+        faces = coin.SoIndexedFaceSet()
+        indices = np.empty((count, 4), dtype=np.int32)
+        indices[:, :3] = np.arange(count * 3, dtype=np.int32).reshape(count, 3)
+        indices[:, 3] = -1
+        faces.coordIndex.setValues(0, count * 4, indices.reshape(-1))
+        root.addChild(faces)
+    return root
+
+
 class ToolView:
     """Shows one path and one tool pose in a 3D view, replacing the previous ones."""
 
@@ -92,6 +125,7 @@ class ToolView:
         self._scene: Optional[Any] = None
         self._path: Optional[Any] = None
         self._tool: Optional[Any] = None
+        self._stock: Optional[Any] = None
 
     def _graph(self) -> Any:
         if self._scene is None:
@@ -109,6 +143,12 @@ class ToolView:
     def show_tool(self, poses: Sequence[CylinderPose], collides: bool = False) -> None:
         self._replace("_tool", build_tool_node(poses, collides))
 
+    def show_stock(self, triangles: Any) -> None:
+        self._replace("_stock", build_stock_node(triangles))
+
+    def hide_stock(self) -> None:
+        self._replace("_stock", None)
+
     def _replace(self, attribute: str, node: Optional[Any]) -> None:
         scene = self._graph()
         old = getattr(self, attribute)
@@ -121,7 +161,7 @@ class ToolView:
     def clear(self) -> None:
         if self._scene is None:
             return
-        for attribute in ("_path", "_tool"):
+        for attribute in ("_path", "_tool", "_stock"):
             self._replace(attribute, None)
         self._scene = None
 

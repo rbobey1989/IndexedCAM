@@ -82,6 +82,32 @@ def build_clips(document: Any, manager: Any, program: Any, bridge: Any, machine:
     ).build(items)
 
 
+STOCK_MAX_CELLS = 800_000
+NON_BOX_MAX_CELLS = 150_000
+REFRESH_SECONDS = 0.15
+
+
+def stock_for_job(job: Any) -> Any:
+    """Voxel model of the Job's stock (None if the Job has no usable stock)."""
+    from IndexedCAM.Core.voxel_stock import VoxelStock
+
+    shape = getattr(getattr(job, "Stock", None), "Shape", None)
+    if shape is None or shape.isNull():
+        return None
+    box = shape.BoundBox
+    low, high = (box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)
+    is_box = abs(shape.Volume - box.XLength * box.YLength * box.ZLength) < 1e-3 * shape.Volume
+    inside = None
+    cells = STOCK_MAX_CELLS
+    if not is_box:
+        import FreeCAD
+
+        cells = NON_BOX_MAX_CELLS
+        inside = lambda centres: [shape.isInside(FreeCAD.Vector(*c), 1e-6, True) for c in centres]
+    resolution = (box.XLength * box.YLength * box.ZLength / cells) ** (1 / 3)
+    return VoxelStock(low, high, resolution, cells, inside)
+
+
 class PreviewCommand:
     """FreeCAD command ``IndexedCAM_Preview``."""
 
@@ -113,6 +139,7 @@ class PreviewCommand:
         try:
             ctx = open_context(document, selected_objects())
             clips = build_clips(document, ctx.manager, ctx.program, ctx.bridge)
+            stock = stock_for_job(ctx.job) if clips else None
         except JobCancelled:
             return
         except (ValueError, KeyError) as error:
@@ -125,14 +152,14 @@ class PreviewCommand:
             return
         if PreviewCommand._window is not None:
             PreviewCommand._window.close()
-        PreviewCommand._window = PreviewWindow(clips)
+        PreviewCommand._window = PreviewWindow(clips, stock, ctx.job)
         PreviewCommand._window.show()
 
 
 class PreviewWindow:
     """Non-modal player: pick a clip, drag the slider or press play."""
 
-    def __init__(self, clips: Sequence[Clip]) -> None:
+    def __init__(self, clips: Sequence[Clip], stock: Any = None, job: Any = None) -> None:
         import FreeCADGui as Gui
         from PySide import QtCore, QtWidgets
 
@@ -140,9 +167,17 @@ class PreviewWindow:
 
         self._clips = list(clips)
         self._view = ToolView()
+        self._timeline = None
+        self._job = job
+        self._job_stock_visible = None
+        self._last_refresh = 0.0
+        if stock is not None:
+            from IndexedCAM.Core.stock_timeline import StockTimeline
+
+            self._timeline = StockTimeline(stock, self._clips)
         self._dialog = QtWidgets.QDialog(Gui.getMainWindow())
         self._dialog.setWindowTitle(DIALOG_TITLE)
-        self._dialog.finished.connect(lambda *_: self._view.clear())
+        self._dialog.finished.connect(lambda *_: self._closed())
         layout = QtWidgets.QVBoxLayout(self._dialog)
         self._list = QtWidgets.QListWidget()
         for clip in self._clips:
@@ -151,11 +186,16 @@ class PreviewWindow:
         self._slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._play = QtWidgets.QPushButton("▶ Reproducir")
         self._check = QtWidgets.QPushButton("Buscar colisiones")
+        self._stock_box = QtWidgets.QCheckBox("Mostrar stock y material retirado")
+        self._stock_box.setChecked(self._timeline is not None)
+        self._stock_box.setEnabled(self._timeline is not None)
+        self._stock_box.toggled.connect(lambda _: self._show(self._slider.value(), force=True))
         row = QtWidgets.QHBoxLayout()
         row.addWidget(self._play)
         row.addWidget(self._check)
         for widget in (self._list, self._slider, self._status):
             layout.addWidget(widget)
+        layout.addWidget(self._stock_box)
         layout.addLayout(row)
         self._timer = QtCore.QTimer(self._dialog)
         self._timer.setInterval(40)
@@ -168,7 +208,37 @@ class PreviewWindow:
         self._list.setCurrentRow(0)
 
     def show(self) -> None:
+        self._hide_job_stock()
         self._dialog.show()
+        self._show(self._slider.value(), force=True)
+
+    def _hide_job_stock(self) -> None:
+        view = getattr(getattr(self._job, "Stock", None), "ViewObject", None)
+        if view is not None and self._timeline is not None:
+            self._job_stock_visible = view.Visibility
+            view.Visibility = False
+
+    def _closed(self) -> None:
+        self._timer.stop()
+        self._view.clear()
+        view = getattr(getattr(self._job, "Stock", None), "ViewObject", None)
+        if view is not None and self._job_stock_visible is not None:
+            view.Visibility = self._job_stock_visible
+
+    def _update_stock(self, index: int, force: bool) -> None:
+        import time
+
+        if self._timeline is None:
+            return
+        if not self._stock_box.isChecked():
+            self._view.hide_stock()
+            return
+        stock = self._timeline.show(max(0, self._list.currentRow()), index)
+        now = time.monotonic()
+        # while playing, the mesh is rebuilt only a few times per second
+        if force or not self._timer.isActive() or now - self._last_refresh >= REFRESH_SECONDS:
+            self._view.show_stock(stock.triangles())
+            self._last_refresh = now
 
     def close(self) -> None:
         self._dialog.close()
@@ -190,7 +260,7 @@ class PreviewWindow:
         self._slider.blockSignals(False)
         self._show(0)
 
-    def _show(self, index: int) -> None:
+    def _show(self, index: int, force: bool = False) -> None:
         clip = self._clip
         if not len(clip):
             self._status.setText(clip.error or "Sin movimientos")
@@ -198,6 +268,7 @@ class PreviewWindow:
         frame = clip.frames[index]
         hit = clip.collision(index)
         self._view.show_tool(clip.poses(index), collides=bool(hit))
+        self._update_stock(index, force)
         text = "{}  B={:.1f} C={:.1f}  {}".format(clip.title, frame.b, frame.c, frame.label)
         if clip.tool:
             text += "\nHerramienta: " + clip.tool
