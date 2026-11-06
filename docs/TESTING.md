@@ -194,6 +194,30 @@ Pulsa **Program** en la barra IndexedCAM: lista los pasos en orden (`Setup → o
 
 La comprobación `tests/freecad/check_assign_operation.py` cubre el programa (orden, poses en coordenadas de pieza, renombrado, guardado y reapertura).
 
+## Postprocesado (#19)
+
+Pulsa **Postprocesar** en la barra IndexedCAM (requiere operaciones asignadas) y
+elige el fichero `.ngc`. Genera un plano inclinado `G68.2` por orientación, el
+indexado `B`/`C`, la retirada antes de cada giro y las operaciones en
+coordenadas locales. Detalles y configuración de LinuxCNC en
+[POST_LINUXCNC.md](POST_LINUXCNC.md).
+
+```bash
+INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/post.log \
+  /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_post.py
+cat /tmp/post.log
+```
+
+`check_post.py` crea un Job con dos orientaciones y comprueba, **leyendo el
+G-code generado**, que el marco que reconstruye el controlador a partir de los
+dos bloques `G68.2 P3` coincide con el `LocalFrame` del Setup (origen, +X,
+normal y el +Y derivado), que la cabeza se indexa a los ángulos de cada Setup,
+que hay un solo cambio de herramienta cuando se repite la herramienta, que la
+retirada va antes de anular el plano y que los movimientos se emiten sin
+transformar. Los tests rápidos (`tests/test_post_builder.py`,
+`tests/test_linuxcnc_post.py`) cubren el modelo y el formato, incluido el
+programa completo esperado.
+
 ## Previsualización (#18)
 
 Pulsa **Preview** en la barra IndexedCAM (requiere operaciones asignadas, ver Programa). Se abre una ventana no modal con la lista de pasos: cada operación y, entre Setups distintos, su transición. Al elegir una entrada se dibuja su trayectoria (azul) y la herramienta (naranja), el vástago, el portaherramientas y el cabezal con la pose B/C de la muestra. **Deslizador** y **▶ Reproducir** recorren las muestras; si una muestra colisiona, la herramienta se pinta de **rojo** y el estado indica el obstáculo. **Buscar colisiones** salta a la primera muestra con colisión. Las transiciones que no se pudieron validar se marcan con ⚠ y se muestra la ruta intentada. Al cerrar la ventana se limpia la vista 3D.

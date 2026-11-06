@@ -37,3 +37,17 @@ Decisión: la máquina usa por defecto **B∈[0, 180]** (B=0 herramienta vertica
 - sin `previous`: B ≥ 0 y menor |C|.
 
 Devuelve `OrientationSolution(angles, alternatives)`. Una normal con `nz < 0` (cara hacia abajo, p. ej. socavado) solo es alcanzable si B admite valores >90°; si no, lanza `UnreachableOrientationError`, subclase de `ValueError`. En la singularidad (normal ∥ Z) se conserva el C de `previous`.
+
+## En el controlador (LinuxCNC)
+
+El G-code no compensa el pivote: escribe la **punta** y deja que lo haga el
+módulo `5axiskins` (`XYZBC`, *head* puro). Su matemática es la misma de este
+documento: `punta + (pivot + herramienta) · n`, con `n` calculado como aquí.
+`5axiskins` usa `180° − B`, de modo que **el tilt va al revés del sentido
+convencional** alrededor de +Y; por eso el post aplica un mapeo configurable
+`palabra = signo · (ángulo − cero)` con `AxisSigns`, cuyo valor por defecto es
+B+ hacia +X con C=0 y C+ antihorario visto desde +Z.
+
+Ese mismo modelo alimenta `TravelBox` (`tip_in_travel` comprueba el pivote, no
+la punta) y la esfera de seguridad del Preview. Detalles de la configuración y
+del programa generado en [POST_LINUXCNC.md](POST_LINUXCNC.md).

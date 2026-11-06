@@ -19,7 +19,7 @@ Cada setup agrupa las operaciones CAM que se ejecutan en esa orientación. Las o
 
 ## Postprocesado
 
-El postprocesador genera los movimientos de posicionamiento necesarios antes de las operaciones de cada setup. Estos movimientos llevan la máquina a los ángulos B y C asociados al setup.
+`Core/post_program.py` define el modelo independiente de la máquina: `PostTool`, `PostMove`, `PostOperation`, `PostOrientation` y `PostProgram`. `Core/post_builder.py` agrupa los pasos consecutivos de un mismo Setup en una orientación, adjunta herramienta, husillo y refrigerante a cada operación y calcula las dos alturas locales que necesita el G-code: `safe_z` (por encima de la misma esfera de seguridad que usa el Preview) y `clearance_z` (primera Z del camino). `Post/linuxcnc.py` renderiza el programa: por orientación retirada, `G69`, parada de husillo, cambio de herramienta (`M6` + `G43.4`), indexado `B`/`C`, plano inclinado `G68.2 P3` con el origen/+X y la normal del `LocalFrame`, aproximación y las operaciones **sin transformar** en coordenadas locales; `AxisSigns` mapea los ángulos de pieza a las palabras del controlador y `LinuxCNCConfig` reúne unidades, decimales, numeración de línea, refrigerante y cabecera. `Commands/post.py` conecta el comando con el documento y escribe el fichero. Ver [POST_LINUXCNC.md](POST_LINUXCNC.md).
 
 ## Gestión de setups
 

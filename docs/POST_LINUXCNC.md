@@ -1,0 +1,205 @@
+# Postprocesador LinuxCNC
+
+Genera el G-code de un Job indexado para una máquina de **cabezal B + C** con
+LinuxCNC. El programa corre bajo un **plano de trabajo inclinado** (`G68.2`) y
+la compensación del pivote la hace el módulo de cinemática **`5axiskins`**: el
+programa escribe la **punta de la herramienta** y el controlador calcula los
+ejes lineales.
+
+## Qué emite
+
+Por cada orientación del programa:
+
+1. Retirada en el eje de la herramienta hasta `safe_z` (fuera de la esfera de
+   seguridad, plano actual).
+2. `G69` — anula el plano anterior.
+3. `M5` y `M9` — husillo y refrigerante fuera (configurable).
+4. Si cambia la herramienta: `G49`, `M6 T…` y `G43.4 H…`.
+5. `G54` (el WCS del Setup) y `G0 B… C…` — indexado.
+6. `G68.2 P3 Q1 …` (origen y +X del plano) y `G68.2 P3 Q2 …` (normal +Z).
+7. `G0 Z<clearance>` — aproximación dentro del plano.
+8. Las operaciones **tal cual**: los movimientos de `Path.Commands` se emiten
+   sin transformar, en coordenadas locales de la cara.
+
+Ejemplo real (Job con dos orientaciones y una herramienta):
+
+```gcode
+%
+(IndexedCAM - Test000)
+(Herramientas: T1 Endmill D5)
+G21 G90 G17 G94 G40 G80
+G69 (cancela cualquier plano previo)
+G49
+M6 T1 (cambio de herramienta T1 Endmill D5)
+G43.4 H1 (longitud de herramienta)
+G54 (sistema de coordenadas)
+G0 B90.000 C0.000 (indexado)
+G68.2 P3 Q1 X70.000 Y40.000 Z45.000 I0.000 J0.000 K-1.000 (plano: origen y +X)
+G68.2 P3 Q2 I1.000 J0.000 K0.000 (plano: normal +Z)
+G0 Z10.000 (aproximacion en el plano)
+(Operacion Contour - T1 Endmill D5)
+S10000 M3 (husillo horario)
+M8 (refrigerante ON)
+G0 X12.500 Y17.500
+G1 X12.500 Y17.500 Z5.000
+(...)
+G0 Z109.051 (retirada libre para indexar)
+G69 (anula el plano inclinado)
+M5 (para el husillo)
+M9 (refrigerante OFF)
+G54 (sistema de coordenadas)
+G0 B0.000 C0.000 (indexado)
+G68.2 P3 Q1 X40.000 Y40.000 Z60.000 I1.000 J0.000 K0.000 (plano: origen y +X)
+G68.2 P3 Q2 I0.000 J0.000 K1.000 (plano: normal +Z)
+(...)
+M30 (fin de programa)
+%
+```
+
+El bloque `G68.2 P3` usa dos vectores en lugar de ángulos de Euler: el primero
+da el **origen** del plano y su **+X**, el segundo su **+Z** (la normal). Así el
+plano es exactamente el `LocalFrame` del Setup, sin singularidades ni
+ambigüedades de Euler. LinuxCNC deriva el +Y como `+Z × +X`, que es como se
+construye nuestro marco, y lo comprueba `tests/freecad/check_post.py`.
+
+## Configuración del controlador
+
+`5axiskins` (`src/emc/kinematics/5axiskins.c`, *"kinematics for XYZBC 5 axis
+bridge mill"*) es la cinemática de un cabezal B+C: el eje Z del programa es la
+**punta** de la herramienta y el módulo coloca los ejes lineales a partir del
+pivote. Está en LinuxCNC desde 2.9; la configuración de referencia del propio
+proyecto es `configs/sim/axis/vismach/5axis/bridgemill/5axis.ini`.
+
+Mínimo en el INI (6 ejes: x,y,z,b,c,w; `b` = joint 3, `c` = joint 4):
+
+```ini
+[TRAJ]
+COORDINATES = XYZBCW
+ANGULAR_UNITS = degree
+
+[KINS]
+JOINTS = 6
+KINEMATICS = 5axiskins
+```
+
+y la longitud del pivote en HAL, medida desde la punta hasta el eje B
+(incluye la herramienta):
+
+```hal
+# pivote mecánico + longitud de la herramienta en uso
+setp sum2.in0 250          # pivote mecánico, mm
+net tool-offset motion.tooloffset.z => sum2.in1
+net pivot sum2.out => 5axiskins.pivot-length
+```
+
+El pin se llama `5axiskins.pivot-length` (prefijo HAL del módulo). En 2.10 el
+módulo tiene además un pin `5axiskins.tool-length`: si tu compilación lo
+expone, conéctale `motion.tooloffset.z` y deja `pivot-length` con el valor
+mecánico. Compruébalo siempre con `halcmd show pin | grep 5axiskins` antes de
+mecanizar.
+
+### G43 y G43.4
+
+- `5axiskins` declara su cinemática como **primaria** (`.primary = 1`).
+- Con `KINEMATICS = 5axiskins` (sin `identityfirst`) la máquina arranca ya en
+  esa cinemática: `G43` basta.
+- Con una configuración de cinemáticas conmutables (`identityfirst`), hace
+  falta `G43.4` para activarla; `G49` vuelve a identidad.
+- Por eso el post usa **`G43.4` por defecto** (`LinuxCNCConfig.tool_length`), que
+  funciona en ambos casos. Con `tool_length="G43"` se emite `G43` y con
+  `tool_length="none"` no se emite ninguna compensación (la gestión queda en
+  manos del operador).
+
+## Modelo cinemático y sentidos
+
+Coincide exactamente con lo que ya calcula IndexedCAM:
+
+| | IndexedCAM | LinuxCNC `5axiskins` |
+| --- | --- | --- |
+| Eje de herramienta | `n = (sinB·cosC, sinB·sinC, cosB)` | `p − t = (sinB·cosC, sinB·sinC, −cosB)` |
+| Pivote | `punta + pivot_distance · n` | `punta + (pivot + tool + W) · n` |
+| Relación | `pivot_distance` = pivote + herramienta | misma |
+
+`5axiskins` usa `180° − B`, así que **el sentido del tilt es el opuesto al
+convencional** (giro a derechas alrededor de +Y), como avisa su nota 10. Además
+cada cabezal tiene su cero. Por eso el post aplica un mapeo configurable:
+
+```python
+AxisSigns(b_sign=1.0, c_sign=1.0, b_zero=0.0, c_zero=0.0)   # por defecto
+# palabra = sign · (ángulo − cero)
+```
+
+Por defecto se cumple: **B+ inclina la herramienta hacia +X con C=0** y **C+
+gira en sentido antihorario visto desde +Z**. Si tu cabezal es al revés, usa
+`AxisSigns(b_sign=-1)` (o `c_sign`, `b_zero`, `c_zero`) sin tocar la geometría.
+
+## Alturas
+
+- `safe_z`: Z local por encima de la **esfera de seguridad** (`SafetySphere`);
+  ahí se indexa. Es el mismo número que usa el Preview, así que la retirada del
+  G-code coincide con lo que se ve.
+- `clearance_z`: primera Z del primer movimiento de la orientación (donde CAM
+  manda la herramienta), siempre que esté entre la cara (Z local 0) y `safe_z`.
+  Si el camino empieza por debajo de la cara, la aproximación se queda en
+  `safe_z` y es el propio camino el que baja.
+
+Ambas están en coordenadas locales del plano, así que la retirada es siempre
+**paralela al eje de la herramienta**.
+
+## Arcos
+
+Bajo `G68.2` los bloques se programan en el plano de la cara (X e Y en el
+plano, Z según la normal), así que **todos los arcos son válidos como G2/G3** y
+no se linealiza nada: cada cara tiene su propio plano. Los centros `I`/`J` se
+emiten tal como los da CAM (incrementales respecto al inicio, que es lo que
+LinuxCNC espera por defecto con `G91.1`).
+
+## Uso
+
+- **GUI**: **IndexedCAM → Postprocesar**, con el Job o una operación
+  seleccionada. Pide el fichero `.ngc` y escribe el programa con los valores
+  por defecto (`G54`, mm, 3 decimales, `G43.4`, sin números de línea).
+  Muestra un resumen: orientaciones, operaciones, herramientas y líneas.
+- **Consola**:
+
+```python
+import FreeCAD, FreeCADGui
+from IndexedCAM.Commands.context import build_context, selected_objects
+from IndexedCAM.Commands.post import build_post, write_program
+from IndexedCAM.Post.linuxcnc import AxisSigns, LinuxCNCConfig, LinuxCNCPost
+
+doc = FreeCAD.ActiveDocument
+ctx = build_context(doc, None)          # el único Job del documento
+post = build_post(doc, ctx.manager, ctx.program, ctx.bridge, ctx.job.Label)
+config = LinuxCNCConfig(signs=AxisSigns(b_sign=-1.0), line_numbers=True)
+text = LinuxCNCPost().render(post, config)
+write_program(text, "/tmp/prueba.ngc")
+```
+
+## Validación en vacío (antes de cortar)
+
+1. `halcmd show pin | grep 5axiskins` — confirma los pines de pivote.
+2. Con la máquina en el aire, ejecuta el programa con el **offset de pieza
+   alto** (por ejemplo `G54 Z+100`) y observa: la herramienta debe inclinarse y
+   apuntar perpendicular a cada cara; la punta debe describir la trayectoria
+   prevista, sin cabeceos ni saltos.
+3. Comprueba la retirada: siempre paralela al eje de la herramienta y antes de
+   cualquier giro.
+4. Si la inclinación va al lado contrario, corrige `AxisSigns`.
+5. Revisa `tests/freecad/check_post.py`: verifica, leyendo el G-code generado,
+   que el plano reconstruido por el controlador coincide con el marco del
+   Setup y que cada movimiento se emite sin transformar.
+
+## Limitaciones
+
+- Un solo WCS por orientación (`IndexedSetup.wcs`, por defecto `G54`); no se
+  emiten offsets medidos.
+- No se emite `G12.1`/`G13.1`: se apoya en `5axiskins` + `G43.4`.
+- El pivote no se modela con desplazamiento lateral respecto al eje C.
+- Operación vacía = paso omitido, pero la orientación sigue apareciendo si
+  tiene alguna operación con movimientos.
+- Los comentarios del G-code se escriben en ASCII (sin acentos ni `Ø`).
+- El post no comprueba colisiones: eso es el Preview.
+
+Implementación: `Core/post_program.py` (modelo), `Core/post_builder.py`
+(construcción), `Post/linuxcnc.py` (formato) y `Commands/post.py` (comando).

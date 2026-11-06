@@ -12,8 +12,11 @@ Workbench para FreeCAD orientado al mecanizado indexado 3+2.
 
 ## Estado
 
-En desarrollo. Actualmente incluye el solver geométrico B+C y el registro mínimo
-del Workbench para FreeCAD 1.1+.
+El flujo completo funciona sobre el Job nativo de CAM: orientaciones indexadas
+dentro del Job, operaciones asociadas a cada orientación, programa, Preview con
+stock y colisiones, y postprocesador LinuxCNC (planos `G68.2` + `5axiskins`).
 
-Consulta [docs/ROADMAP.md](docs/ROADMAP.md) para las fases de desarrollo y
-[docs/TESTING.md](docs/TESTING.md) para instalar y probar el addon en FreeCAD.
+Consulta [docs/ROADMAP.md](docs/ROADMAP.md) para las fases de desarrollo,
+[docs/TESTING.md](docs/TESTING.md) para instalar y probar el addon en FreeCAD y
+[docs/POST_LINUXCNC.md](docs/POST_LINUXCNC.md) para el G-code y la
+configuración de la máquina.

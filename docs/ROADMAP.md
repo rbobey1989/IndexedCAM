@@ -22,7 +22,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 14 | #16 | `TransitionPlanner` (retirada, giro, aproximación) | Hecho |
 | 15 | #17 | `CollisionChecker` | Hecho |
 | 16 | #18 | Visualización de herramienta/movimientos y reproductor | Hecho |
-| 17 | #19 | Postprocesador `indexedcam_post.py` | Pendiente |
+| 17 | #19 | Postprocesador LinuxCNC (planos `G68.2` + B/C + `5axiskins`): ver [POST_LINUXCNC.md](POST_LINUXCNC.md) | Hecho |
 
 ## Decisiones
 
