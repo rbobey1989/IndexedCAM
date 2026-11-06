@@ -19,4 +19,5 @@ stock y colisiones, y postprocesador LinuxCNC (planos `G68.2` + `5axiskins`).
 Consulta [docs/ROADMAP.md](docs/ROADMAP.md) para las fases de desarrollo,
 [docs/TESTING.md](docs/TESTING.md) para instalar y probar el addon en FreeCAD y
 [docs/POST_LINUXCNC.md](docs/POST_LINUXCNC.md) para el G-code y la
-configuración de la máquina.
+configuración de la máquina. Hay una máquina simulada lista para probar el 3+2
+en [configs/linuxcnc](configs/linuxcnc/README.md).

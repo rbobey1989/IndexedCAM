@@ -1,0 +1,15 @@
+# Geometria del cabezal B+C para 5axiskins.
+#
+# 5axiskins ya esta cargado por LIB:basic_sim.tcl (KINEMATICS = 5axiskins en el
+# INI), asi que sus pines existen cuando se ejecuta este fichero.
+#
+# pivot-length: distancia de la PUNTA de la herramienta al eje B, medida a lo
+#               largo del eje de la herramienta, SIN la herramienta montada.
+# tool-length:  longitud de la herramienta en uso; entra en el radio del pivote
+#               para que las poses inclinadas queden correctas.
+#
+# Coincide con el modelo vismach (indexedcam_vismach.hal usa pivot_len=250).
+
+setp 5axiskins.pivot-length 250
+
+net tool-len motion.tooloffset.z => 5axiskins.tool-length

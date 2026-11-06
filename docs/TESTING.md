@@ -194,6 +194,32 @@ Pulsa **Program** en la barra IndexedCAM: lista los pasos en orden (`Setup → o
 
 La comprobación `tests/freecad/check_assign_operation.py` cubre el programa (orden, poses en coordenadas de pieza, renombrado, guardado y reapertura).
 
+## Simulacion LinuxCNC (cabezal B+C)
+
+El repositorio trae una maquina simulada con la cinematica `5axiskins` para
+probar el 3+2 sin tocar hierro. Instrucciones completas y valores esperados en
+[configs/linuxcnc/README.md](../configs/linuxcnc/README.md).
+
+```bash
+linuxcnc configs/linuxcnc/indexedcam.ini     # GUI Axis + ventana 3D del cabezal
+```
+
+Abre `validate_bc.ngc`: al pulsar Cycle Start la herramienta se orienta en las
+cuatro caras del ejemplo. Despues de cambiar el postprocesador, un programa
+generado con **Postprocesar** se puede abrir desde la misma GUI.
+
+Comprobacion automatica (arranca la config en un display virtual, referencia la
+maquina y compara los joints con la cinematica del pivote):
+
+```bash
+python3 tests/linuxcnc/check_sim.py
+cat /tmp/indexedcam_sim.log          # ultima linea: PASS
+```
+
+Los tests rapidos validan ademas que el INI, el HAL y los planos de
+`validate_bc.ngc` sean coherentes, y que `rs274` acepte el programa
+(`tests/test_linuxcnc_config.py`, sin necesidad de arrancar la maquina).
+
 ## Postprocesado (#19)
 
 Pulsa **Postprocesar** en la barra IndexedCAM (requiere operaciones asignadas) y

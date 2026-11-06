@@ -1,3 +1,11 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# LinuxCNC genera estos ficheros al arrancar la configuracion de simulacion
+configs/linuxcnc/*.var
+configs/linuxcnc/*.var.bak
+configs/linuxcnc/*_cmds.hal
+# directorio de pruebas manuales
+.scratch/
+configs/linuxcnc/indexedcam_run.ini

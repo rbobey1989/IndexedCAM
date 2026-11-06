@@ -23,6 +23,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 15 | #17 | `CollisionChecker` | Hecho |
 | 16 | #18 | Visualización de herramienta/movimientos y reproductor | Hecho |
 | 17 | #19 | Postprocesador LinuxCNC (planos `G68.2` + B/C + `5axiskins`): ver [POST_LINUXCNC.md](POST_LINUXCNC.md) | Hecho |
+| 18 | — | Configuracion de simulacion LinuxCNC (cabezal B+C, `5axiskins`) y verificacion de los planos: ver [configs/linuxcnc](../configs/linuxcnc/README.md) | Hecho |
 
 ## Decisiones
 

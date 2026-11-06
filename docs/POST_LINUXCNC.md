@@ -70,7 +70,9 @@ bridge mill"*) es la cinemática de un cabezal B+C: el eje Z del programa es la
 pivote. Está en LinuxCNC desde 2.9; la configuración de referencia del propio
 proyecto es `configs/sim/axis/vismach/5axis/bridgemill/5axis.ini`.
 
-Mínimo en el INI (6 ejes: x,y,z,b,c,w; `b` = joint 3, `c` = joint 4):
+El repositorio incluye una configuración de simulación ya probada,
+[configs/linuxcnc](../configs/linuxcnc/README.md), que sirve de plantilla para
+la máquina real. Lo esencial:
 
 ```ini
 [TRAJ]
@@ -78,25 +80,29 @@ COORDINATES = XYZBCW
 ANGULAR_UNITS = degree
 
 [KINS]
-JOINTS = 6
-KINEMATICS = 5axiskins
+JOINTS = 6                      ; x:0 y:1 z:2 b:3 c:4 w:5
+KINEMATICS = 5axiskins coordinates=xyzbcw
 ```
-
-y la longitud del pivote en HAL, medida desde la punta hasta el eje B
-(incluye la herramienta):
 
 ```hal
-# pivote mecánico + longitud de la herramienta en uso
-setp sum2.in0 250          # pivote mecánico, mm
-net tool-offset motion.tooloffset.z => sum2.in1
-net pivot sum2.out => 5axiskins.pivot-length
+# pivote mecanico (punta -> eje B) SIN la herramienta, y longitud de la
+# herramienta en uso (sale de la tabla con G43/G43.4)
+setp 5axiskins.pivot-length 250
+net tool-len motion.tooloffset.z => 5axiskins.tool-length
 ```
 
-El pin se llama `5axiskins.pivot-length` (prefijo HAL del módulo). En 2.10 el
-módulo tiene además un pin `5axiskins.tool-length`: si tu compilación lo
-expone, conéctale `motion.tooloffset.z` y deja `pivot-length` con el valor
-mecánico. Compruébalo siempre con `halcmd show pin | grep 5axiskins` antes de
-mecanizar.
+Comprobado en LinuxCNC 2.10.0~pre2 midiendo los joints: con pivote 250 y
+herramienta de longitud 0, el origen de la cara +X (`G68.2` con normal +X y
+`G0 X0 Y0 Z0`) deja `X=-190, Z=-235`; la cara compuesta 45°/45° deja
+`X=-65, Y=-85, Z=-43,223`. Y con una herramienta de 40 mm en la tabla, la misma
+cara +X pasa a `X=-230` con la punta en el mismo punto: el offset de Z entra en
+el eje Z y el módulo lo añade al radio del pivote. Eso es lo que hacen los dos
+pines de arriba.
+
+`5axiskins` es un módulo de cinemáticas conmutables con tres tipos: 0 =
+`5axiskins`, 1 = identidad, 2 = `userkins`; por defecto arranca en el 0. Los
+nombres de los pines se comprueban con `halcmd show pin | grep 5axiskins` antes
+de mecanizar nada.
 
 ### G43 y G43.4
 

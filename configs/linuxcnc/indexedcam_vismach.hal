@@ -1,0 +1,19 @@
+# Modelo 3D del cabezal B+C (vismach) que viene con LinuxCNC: es el mismo tipo
+# de maquina (bridge mill con cabezal B+C), asi que sirve para ver como se
+# inclina la herramienta en cada orientacion.
+#
+# El cero de B del modelo es el mismo que el de 5axiskins, y C gira alrededor
+# de Z. El pivote dibujado (pivot_len) debe coincidir con
+# 5axiskins.pivot-length de indexedcam.hal.
+
+loadusr -W /usr/share/doc/linuxcnc/examples/sample-configs/sim/axis/vismach/5axis/bridgemill/5axisgui.py pivot_len=250
+
+net :jx joint.0.pos-fb 5axisgui.jx
+net :jy joint.1.pos-fb 5axisgui.jy
+net :jz joint.2.pos-fb 5axisgui.jz
+net :jb joint.3.pos-fb 5axisgui.jb
+net :jc joint.4.pos-fb 5axisgui.jc
+
+# la misma senal que indexedcam.hal (una senal, varios destinos)
+net tool-len => 5axisgui.tool_length
+net :tool-diam halui.tool.diameter => 5axisgui.tool_diam
