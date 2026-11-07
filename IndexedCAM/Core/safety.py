@@ -23,9 +23,17 @@ PROPERTY_NAME = "IndexedCAMSafety"
 
 @dataclass(frozen=True)
 class SafetyConfig:
-    """Extra clearance, in millimetres, above the minimal retract sphere."""
+    """Retract clearance and which parts of the machine are modelled.
+
+    ``holder`` and ``head`` default to False: only the tool is considered, both
+    when checking collisions and when drawing. A collet holder is much slimmer
+    than the stand-in cylinder, so modelling it made the retracts long for no
+    reason; turn them on to check against the real (bulkier) hardware.
+    """
 
     margin: float = MINIMUM_MARGIN
+    holder: bool = False
+    head: bool = False
 
     def __post_init__(self) -> None:
         value = float(self.margin)
@@ -44,16 +52,25 @@ class SafetyConfig:
         return self.margin == MINIMUM_MARGIN
 
     def describe(self) -> str:
-        if self.is_minimum:
-            return "Distancia de seguridad: la mínima (0 mm)"
-        return "Distancia de seguridad: {:g} mm".format(self.margin)
+        parts = [
+            "Distancia de seguridad: la mínima (0 mm)"
+            if self.is_minimum
+            else "Distancia de seguridad: {:g} mm".format(self.margin)
+        ]
+        accessories = [name for name, on in (("portaherramientas", self.holder), ("cabezal", self.head)) if on]
+        parts.append("modela " + " y ".join(accessories) if accessories else "solo la herramienta")
+        return " · ".join(parts)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"margin": self.margin}
+        return {"margin": self.margin, "holder": self.holder, "head": self.head}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SafetyConfig":
-        return cls(float(data.get("margin", MINIMUM_MARGIN)))
+        return cls(
+            float(data.get("margin", MINIMUM_MARGIN)),
+            bool(data.get("holder", False)),
+            bool(data.get("head", False)),
+        )
 
 
 class MemorySafetyStorage:

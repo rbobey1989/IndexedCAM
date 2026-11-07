@@ -23,7 +23,7 @@ class SafetyWorkflow:
     def __init__(
         self,
         storage: Any,
-        ask: Callable[[SafetyConfig], Optional[float]],
+        ask: Callable[[SafetyConfig], Optional[SafetyConfig]],
         transaction: Optional[Callable[[], ContextManager[Any]]] = None,
     ) -> None:
         self._storage = storage
@@ -33,10 +33,9 @@ class SafetyWorkflow:
     def run(self) -> Optional[SafetyConfig]:
         """The stored config after the dialog, or None if the user cancelled."""
         current = self._storage.load()
-        margin = self._ask(current)
-        if margin is None:
+        config = self._ask(current)
+        if config is None:
             return None
-        config = SafetyConfig(margin)
         if config == current:
             return config
         with self._transaction():
@@ -44,7 +43,7 @@ class SafetyWorkflow:
         return config
 
 
-def _ask_dialog(current: SafetyConfig) -> Optional[float]:
+def _ask_dialog(current: SafetyConfig) -> Optional[SafetyConfig]:
     import FreeCADGui as Gui
     from PySide import QtWidgets
 
@@ -58,6 +57,15 @@ def _ask_dialog(current: SafetyConfig) -> Optional[float]:
     spin.setSuffix(" mm")
     spin.setValue(current.margin)
     spin.setSpecialValueText("mínima (0 mm)")
+    holder = QtWidgets.QCheckBox("Modelar el portaherramientas")
+    holder.setChecked(current.holder)
+    head = QtWidgets.QCheckBox("Modelar el cabezal")
+    head.setChecked(current.head)
+    accessories = QtWidgets.QLabel(
+        "Por defecto solo se modela la herramienta. Actívalos para comprobar\n"
+        "las colisiones contra el portaherramientas y el cabezal reales."
+    )
+    accessories.setWordWrap(True)
     explanation = QtWidgets.QLabel(
         "Altura adicional sobre el mínimo geométrico, que es la media\n"
         "diagonal de la pieza: en el giro la herramienta apunta hacia\n"
@@ -74,10 +82,13 @@ def _ask_dialog(current: SafetyConfig) -> Optional[float]:
     buttons.rejected.connect(dialog.reject)
     form.addRow("Distancia de seguridad:", spin)
     form.addRow(explanation)
+    form.addRow(holder)
+    form.addRow(head)
+    form.addRow(accessories)
     form.addRow(buttons)
     if not dialog.exec_():
         return None
-    return spin.value()
+    return SafetyConfig(spin.value(), holder.isChecked(), head.isChecked())
 
 
 class SafetyCommand:

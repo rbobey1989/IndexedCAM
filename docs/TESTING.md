@@ -242,8 +242,11 @@ Dos avisos utiles:
 ## Postprocesado (#19)
 
 Pulsa **Seguridad** para fijar la altura de retirada de los giros (0 mm =
-mínima; la usan el Preview y el G-code) y **Postprocesar** (requiere operaciones
-asignadas) para elegir el fichero `.ngc`. Genera un plano inclinado `G68.2` por orientación, el
+mínima; la usan el Preview y el G-code) y decidir si se modelan el
+portaherramientas y el cabezal (por defecto **solo la herramienta**). Pulsa
+**Postprocesar** (requiere operaciones asignadas) para abrir la ventana de
+opciones del controlador —sentidos y ceros de B/C, unidades, decimales,
+longitud de herramienta, refrigerante— y elegir el fichero `.ngc`. Genera un plano inclinado `G68.2` por orientación, el
 indexado `B`/`C`, la retirada antes de cada giro y las operaciones en
 coordenadas locales. Detalles y configuración de LinuxCNC en
 [POST_LINUXCNC.md](POST_LINUXCNC.md).

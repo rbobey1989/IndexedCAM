@@ -22,6 +22,7 @@ def test_the_default_is_the_smallest_retract():
     config = SafetyConfig()
     assert config.margin == MINIMUM_MARGIN == 0.0
     assert config.is_minimum
+    assert not config.holder and not config.head, "por defecto solo se modela la herramienta"
 
 
 def test_the_default_matches_the_geometric_minimum_sphere():
@@ -66,7 +67,7 @@ def test_missing_or_broken_data_falls_back_to_the_default():
 
 def test_workflow_stores_the_value_the_user_chooses():
     storage = MemorySafetyStorage()
-    config = SafetyWorkflow(storage, lambda current: 15.0).run()
+    config = SafetyWorkflow(storage, lambda current: SafetyConfig(15.0)).run()
     assert config == SafetyConfig(15.0)
     assert storage.load() == SafetyConfig(15.0)
 
@@ -81,14 +82,14 @@ def test_workflow_does_not_write_when_nothing_changed():
     saved = []
     storage = MemorySafetyStorage(SafetyConfig(5.0))
     storage.save = lambda config: saved.append(config)
-    SafetyWorkflow(storage, lambda current: 5.0).run()
+    SafetyWorkflow(storage, lambda current: SafetyConfig(5.0)).run()
     assert saved == []
 
 
 def test_workflow_rejects_an_invalid_value():
     storage = MemorySafetyStorage()
     with pytest.raises(ValueError):
-        SafetyWorkflow(storage, lambda current: -3.0).run()
+        SafetyWorkflow(storage, lambda current: SafetyConfig(-3.0)).run()
 
 
 def test_short_retract_keeps_the_head_inside_a_small_machine():
@@ -100,8 +101,19 @@ def test_short_retract_keeps_the_head_inside_a_small_machine():
 def test_a_long_tool_does_not_inflate_the_sphere():
     """La herramienta gira apuntando hacia fuera: no se suma su longitud."""
     half_diagonal = (60.0**2 + 40.0**2 + 30.0**2) ** 0.5 / 2.0
-    long_tool_part = sphere_for(BOX, SafetyConfig().margin)
-    assert long_tool_part.radius == pytest.approx(half_diagonal)
-    envelope = Envelope()
-    assert envelope.tool.length + envelope.holder.length > 50.0
-    assert long_tool_part.radius < half_diagonal + envelope.tool.length
+    sphere = sphere_for(BOX, SafetyConfig().margin)
+    assert sphere.radius == pytest.approx(half_diagonal)
+    assert sphere.radius < half_diagonal + Envelope().tool.length
+
+
+def test_accessories_are_off_by_default_and_can_be_turned_on():
+    plain = SafetyConfig()
+    assert (plain.holder, plain.head) == (False, False)
+    assert "solo la herramienta" in plain.describe()
+    full = SafetyConfig(0.0, holder=True, head=True)
+    assert "portaherramientas" in full.describe() and "cabezal" in full.describe()
+
+
+def test_accessories_survive_a_round_trip():
+    config = SafetyConfig(12.0, holder=True)
+    assert SafetyConfig.from_dict(config.to_dict()) == config

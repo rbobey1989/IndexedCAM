@@ -101,7 +101,7 @@ def test_first_collision_and_poses():
     clips, _ = build(Checker(hit_below_z=35))
     clip = clips[0]
     assert clip.first_collision() == 1  # second sample drops to z=30
-    assert [p.name for p in clip.poses(0)] == ["tool", "holder", "head"]
+    assert [p.name for p in clip.poses(0)] == ["tool"], "por defecto solo se modela la herramienta"
 
 
 def test_failed_transition_is_still_shown_with_error():

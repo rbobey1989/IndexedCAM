@@ -42,7 +42,12 @@ try:
     from IndexedCAM.Machine.envelope import Envelope
 
     box = Part.makeBox(60, 40, 30)
-    envelope = Envelope()
+    # por defecto solo se modela la herramienta; para comprobar el
+    # portaherramientas y el cabezal hay que pedirlos
+    check(len(Envelope().cylinders()) == 1, "sin accesorios solo se modela la herramienta")
+    envelope = Envelope().with_accessories(holder=True, head=True)
+    check([c.name for c in envelope.cylinders()] == ["tool", "holder", "head"],
+          "los accesorios se activan a peticion")
     part = Obstacle("pieza", box, cuttable=True)
     checker = PartCollisionChecker(envelope, [part], margin=2.0)
 
@@ -58,6 +63,14 @@ try:
     # head tilted horizontally over the top face: head cylinder hits the part
     check(checker.collision((30, 20, 32), 90, 0) is not None,
           "horizontal tool grazing the top: holder/head collide")
+
+    # con la envolvente por defecto el comprobador solo mira la herramienta
+    bare = PartCollisionChecker(Envelope(), [part], margin=2.0)
+    hit = bare.collision((30, 20, 32), 90, 0)
+    check(hit is not None and "tool" in hit,
+          "solo herramienta: colisiona la herramienta, no el portaherramientas: %s" % hit)
+    check(bare.collision((30, 20, 45), 90, 0) is None,
+          "solo herramienta: por encima de la pieza, libre")
 
     flutes = PartCollisionChecker(
         envelope.with_tool(5.0, 40.0, cutting_length=10.0), [part], margin=2.0

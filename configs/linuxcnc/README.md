@@ -113,7 +113,10 @@ en su `Z+`.
 La altura se controla con **IndexedCAM → Seguridad** en FreeCAD, que guarda el
 margen en el Job: **0 mm por defecto** (el mínimo geométrico) y lo que haga
 falta si el Preview detecta colisión en los giros. El valor lo usan por igual el
-Preview y el postprocesador.
+Preview y el postprocesador. Ese mismo diálogo decide si se modelan el
+portaherramientas y el cabezal: por defecto **solo la herramienta**, porque el
+cilindro de 20 mm que representa un portaherramientas de pinza es más gordo que
+el real y alargaba las retiradas sin motivo.
 
 ## Comprobación automática
 

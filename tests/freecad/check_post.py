@@ -181,6 +181,25 @@ try:
           "el margen se suma tal cual a la altura de retirada")
     stored.save(SafetyConfig())
 
+    from IndexedCAM.Core.post_settings import JobPostStorage, PostSettings
+    from IndexedCAM.Post.linuxcnc import AxisSigns as PostSigns
+
+    post_storage = JobPostStorage(job)
+    check(post_storage.load() == PostSettings(), "las opciones del post empiezan por defecto")
+    chosen = PostSettings(
+        LinuxCNCConfig(signs=PostSigns(b_sign=-1.0, c_zero=90.0), line_numbers=True),
+        "PostCheck",
+    )
+    post_storage.save(chosen)
+    check(post_storage.load() == chosen, "las opciones del post se guardan en el Job")
+    flipped = LinuxCNCPost().render(posted, post_storage.load().config)
+    check("G0 B-90.000 C-90.000 (indexado)" in flipped,
+          "el sentido configurado llega al G-code")
+    numbered = [line for line in flipped.splitlines() if line.startswith("N")]
+    check(numbered and numbered[0].startswith("N10 "),
+          "la numeracion de lineas configurada llega al G-code: %s" % numbered[:1])
+    post_storage.save(PostSettings())
+
     names = [o.name for o in posted.orientations]
     safe = {o.name: o.safe_z for o in posted.orientations}
     clear = {o.name: o.clearance_z for o in posted.orientations}

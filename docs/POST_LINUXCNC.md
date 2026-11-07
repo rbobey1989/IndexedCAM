@@ -220,9 +220,52 @@ LinuxCNC espera por defecto con `G91.1`).
 ## Uso
 
 - **GUI**: **IndexedCAM → Postprocesar**, con el Job o una operación
-  seleccionada. Pide el fichero `.ngc` y escribe el programa con los valores
-  por defecto (`G54`, mm, 3 decimales, `G43.4`, sin números de línea).
-  Muestra un resumen: orientaciones, operaciones, herramientas y líneas.
+  seleccionada. Abre la **ventana de opciones** (ver abajo), luego pide el
+  fichero `.ngc` y escribe el programa. Al terminar muestra un resumen:
+  orientaciones, operaciones, herramientas y líneas.
+
+## Opciones del postprocesador
+
+Al pulsar el icono **Postprocesar** se abre una ventana con todo lo que depende
+de la máquina y del controlador, no de la geometría:
+
+| Grupo | Opción | Por defecto |
+| --- | --- | --- |
+| Cabezal | sentido de B (`+`/`−`), cero de B | `+`, 0° |
+| Cabezal | sentido de C (`+`/`−`), cero de C | `+`, 0° |
+| Control | longitud de herramienta | `G43.4` |
+| Control | refrigerante (`M8`/`M7`) | sí |
+| Control | parar el husillo entre orientaciones | sí |
+| Control | cabezal vertical antes del cambio de herramienta | no |
+| Formato | unidades (mm/pulgadas), decimales | mm, 3 |
+| Formato | avance por defecto, numerar líneas | 300 mm/min, no |
+
+La ventana muestra además la lista de orientaciones con su **B, C y la normal**,
+que es lo que el post va a usar. Se guarda en el Job (viaja en el `.FCStd`), así
+que el mismo Job se postprocesa igual la próxima vez. Implementación:
+`Core/post_settings.py` (`PostSettings`, `JobPostStorage`),
+`Post/linuxcnc.py` (`LinuxCNCConfig`, `AxisSigns`) y `Commands/post.py`.
+
+### Si una cara lateral se mecaniza "desde dentro"
+
+Síntomas: la cara superior sale bien, pero en una lateral la herramienta entra
+por el interior del material. Casi siempre es el **sentido del eje B** de esa
+máquina (polaridad del motor o cero distinto del que asume el post), no la
+geometría:
+
+1. Mira la normal de la orientación en la ventana de opciones. Para una cara
+   `+X` debe ser `(1, 0, 0)` con `B=90, C=0`.
+2. Si coincide y aun así entra por dentro, invierte **sentido de B** y vuelve a
+   postprocesar: con B=0 (cara superior) el signo no influye, así que la cara
+   buena sigue bien y la lateral cambia de lado.
+3. Si la que está mal es la de `+Y`, prueba con el sentido de C o con los ceros.
+4. El programa generado lleva en la cabecera el mapeo aplicado
+   (`B gain … zero …, C gain … zero …`) y el B/C de cada orientación, así que se
+   puede comprobar sin abrir la ventana.
+
+Esto es lo mismo que valida la simulación de `configs/linuxcnc`: con
+`5axiskins`, `B=90 C=0` pone la herramienta hacia `+X` y la punta queda en el
+plano de la cara, que es el valor por defecto.
 - **Consola**:
 
 ```python

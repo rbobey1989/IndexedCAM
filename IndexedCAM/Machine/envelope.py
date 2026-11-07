@@ -1,9 +1,12 @@
 """Tool, holder and head envelope of a B+C machine (no FreeCAD needed).
 
 The envelope is a stack of coaxial cylinders along the tool axis, measured from
-the tool tip toward the spindle: tool, holder, head. ``pivot_distance`` is the
-distance from the tool tip to the B pivot along the axis (the gauge length of
-the TCP model). All lengths are millimetres.
+the tool tip toward the spindle: tool (flutes + shank), then optionally the
+holder and the head. Both are ``None`` by default, i.e. only the tool is
+modelled: a collet holder is usually much slimmer than the stand-in cylinder
+and modelling it as a 20 mm-radius block made the retracts unnecessarily long.
+``pivot_distance`` is the distance from the tool tip to the B pivot along the
+axis (the gauge length of the TCP model). All lengths are millimetres.
 """
 
 from __future__ import annotations
@@ -36,6 +39,11 @@ class Cylinder:
         _positive(self.length, self.name + " length")
 
 
+# Stand-ins for the cylinders that are modelled only when asked for.
+HOLDER_CYLINDER = Cylinder(HOLDER, 20.0, 50.0)
+HEAD_CYLINDER = Cylinder(HEAD, 60.0, 150.0)
+
+
 @dataclass(frozen=True)
 class CylinderPose:
     """A cylinder placed in space: axis from ``start`` to ``end`` (tip side first)."""
@@ -51,8 +59,8 @@ class Envelope:
     """Tool + holder + head stack and the B pivot position."""
 
     tool: Cylinder = Cylinder(TOOL, 5.0, 40.0)
-    holder: Cylinder = Cylinder(HOLDER, 20.0, 50.0)
-    head: Cylinder = Cylinder(HEAD, 60.0, 150.0)
+    holder: Optional[Cylinder] = None
+    head: Optional[Cylinder] = None
     pivot_distance: float = 120.0
     cutting_length: Optional[float] = None
     shank_radius: Optional[float] = None
@@ -64,8 +72,9 @@ class Envelope:
         if self.shank_radius is not None:
             _positive(self.shank_radius, "shank_radius")
 
-    def cylinders(self) -> Tuple[Cylinder, Cylinder, Cylinder]:
-        return (self.tool, self.holder, self.head)
+    def cylinders(self) -> Tuple[Cylinder, ...]:
+        """The modelled cylinders, from the tip toward the spindle."""
+        return tuple(c for c in (self.tool, self.holder, self.head) if c is not None)
 
     @property
     def reach(self) -> float:
@@ -94,6 +103,17 @@ class Envelope:
             shank_radius,
         )
 
+    def with_accessories(self, holder: bool = False, head: bool = False) -> "Envelope":
+        """Same machine with the default holder/head cylinders, or without them."""
+        return Envelope(
+            self.tool,
+            HOLDER_CYLINDER if holder else None,
+            HEAD_CYLINDER if head else None,
+            self.pivot_distance,
+            self.cutting_length,
+            self.shank_radius,
+        )
+
     @property
     def cutter(self) -> Cylinder:
         """The cutting part of the tool (flutes), from the tip."""
@@ -103,11 +123,13 @@ class Envelope:
         """Cylinders from the tip: cutting part, shank (if any), holder, head."""
         cutting = self.cutting_length
         if cutting is None or cutting >= self.tool.length:
-            return [self.tool, self.holder, self.head]
-        shank = Cylinder(
-            SHANK, self.shank_radius or self.tool.radius, self.tool.length - cutting
-        )
-        return [Cylinder(TOOL, self.tool.radius, cutting), shank, self.holder, self.head]
+            stack = [self.tool]
+        else:
+            stack = [
+                Cylinder(TOOL, self.tool.radius, cutting),
+                Cylinder(SHANK, self.shank_radius or self.tool.radius, self.tool.length - cutting),
+            ]
+        return stack + [c for c in (self.holder, self.head) if c is not None]
 
     def place(self, tip: Vector, b: float, c: float) -> List[CylinderPose]:
         """Cylinders for a tool tip at ``tip`` (part coordinates) and head angles B/C."""
@@ -133,8 +155,8 @@ class Envelope:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "tool": [self.tool.radius, self.tool.length],
-            "holder": [self.holder.radius, self.holder.length],
-            "head": [self.head.radius, self.head.length],
+            "holder": None if self.holder is None else [self.holder.radius, self.holder.length],
+            "head": None if self.head is None else [self.head.radius, self.head.length],
             "pivot_distance": self.pivot_distance,
             "cutting_length": self.cutting_length,
             "shank_radius": self.shank_radius,
@@ -147,16 +169,16 @@ class Envelope:
         if not data:
             return base
 
-        def part(key: str, default: Cylinder) -> Cylinder:
-            if key not in data:
-                return default
+        def part(key: str) -> Optional[Cylinder]:
+            if key not in data or data[key] is None:
+                return None
             radius, length = data[key]
             return Cylinder(key, float(radius), float(length))
 
         return cls(
-            part(TOOL, base.tool),
-            part(HOLDER, base.holder),
-            part(HEAD, base.head),
+            part(TOOL) or base.tool,
+            part(HOLDER),
+            part(HEAD),
             float(data.get("pivot_distance", base.pivot_distance)),
             data.get("cutting_length"),
             data.get("shank_radius"),

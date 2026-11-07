@@ -89,7 +89,10 @@ def build_clips(
     from IndexedCAM.Commands.program import resolve_program
     from IndexedCAM.Core.safety import JobSafetyStorage, SafetyConfig
 
-    machine = machine or BCMachine()
+    safety = JobSafetyStorage(job).load() if job is not None else SafetyConfig()
+    if machine is None:
+        machine = BCMachine()
+        machine = BCMachine(envelope=machine.envelope.with_accessories(safety.holder, safety.head))
     items = resolve_program(program, manager, bridge, document)
     if not items:
         return []
@@ -100,7 +103,7 @@ def build_clips(
     first = setups[items[0].step.setup]
     source = document.getObject(parse_source(first.metadata["source"]).object_name)
     box = source.Shape.BoundBox
-    margin = JobSafetyStorage(job).load().margin if job is not None else SafetyConfig().margin
+    margin = safety.margin
     sphere = sphere_for(
         ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), margin
     )
