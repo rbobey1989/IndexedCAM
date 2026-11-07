@@ -8,8 +8,8 @@ compares the resulting joint positions with the pivot kinematics
 
 Run it after changing the config or the post processor:
 
-    python3 tests/linuxcnc/check_sim.py                     # solo las poses
-    python3 tests/linuxcnc/check_sim.py programa_post.ngc    # y ejecuta un programa
+    python3 tests/linuxcnc/check_sim.py                      # solo las poses
+    python3 tests/linuxcnc/check_sim.py uno.ngc dos.ngc       # y ejecuta esos programas
     cat /tmp/indexedcam_sim.log
 
 The last line of the log is PASS on success. It needs ``linuxcnc``, ``Xvfb``,
@@ -33,7 +33,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CONFIG = os.path.join(ROOT, "configs", "linuxcnc")
 INI = os.path.join(CONFIG, "indexedcam.ini")
 LOG_PATH = os.environ.get("INDEXEDCAM_LOG", os.path.join(tempfile.gettempdir(), "indexedcam_sim.log"))
+LINUXCNC_LOG = os.path.join(tempfile.gettempdir(), "indexedcam_sim_linuxcnc.log")
 TOLERANCE = 0.01
+ERROR_WORDS = ("would exceed", "USRMOT: ERROR", "invalid params", "G68", "error:")
 
 out = open(LOG_PATH, "w", buffering=1)
 procs: List[subprocess.Popen] = []
@@ -82,6 +84,24 @@ CASES: Sequence[Tuple[str, str, float, float, Tuple[float, ...]]] = (
         (-65.0, -85.0, -43.223, 45.0, 45.0),
     ),
 )
+
+
+def realtime_busy() -> bool:
+    """True if another LinuxCNC instance holds the real-time session.
+
+    Only one instance can run per machine: ``loadrt`` fails with
+    "Realtime already running" while the user's own LinuxCNC is open.
+    """
+    path = os.path.join(tempfile.gettempdir(), "indexedcam_probe.hal")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("show pin\n")
+    try:
+        result = subprocess.run(
+            ["halrun", "-f", path], capture_output=True, text=True, timeout=60
+        )
+    finally:
+        os.unlink(path)
+    return "already running" in (result.stdout + result.stderr).lower()
 
 
 def env_with(display: str) -> Dict[str, str]:
@@ -185,7 +205,7 @@ def start_machine(ini_path: Optional[str] = None) -> Dict[str, str]:
     )
     env = env_with(display)
     wait(lambda: os.path.exists("/tmp/.X11-unix/X{}".format(display[1:])), 15, "Xvfb")
-    logfile = open(os.path.join(tempfile.gettempdir(), "indexedcam_sim_linuxcnc.log"), "w")
+    logfile = open(LINUXCNC_LOG, "w")
     procs.append(
         subprocess.Popen(
             ["linuxcnc", "-r", ini_path or INI],
@@ -195,7 +215,7 @@ def start_machine(ini_path: Optional[str] = None) -> Dict[str, str]:
             stderr=subprocess.STDOUT,
         )
     )
-    wait(lambda: gui_ping(env), 120, "la GUI de LinuxCNC")
+    wait(lambda: gui_ping(env), 90, "la GUI de LinuxCNC (mira " + LINUXCNC_LOG + ")")
     check(True, "el config arranca (INI + HAL + 5axiskins)")
     switch_on(env, "halui.estop.reset", "halui.estop.is-activated", "el reset de emergencia", expect=False)
     hal_set(env, "halui.estop.reset", 0)
@@ -242,14 +262,29 @@ def stop_machine(env: Optional[Dict[str, str]]) -> None:
             process.kill()
 
 
+def controller_errors() -> List[str]:
+    """Error lines the controller wrote while running the program."""
+    if not os.path.exists(LINUXCNC_LOG):
+        return []
+    with open(LINUXCNC_LOG, encoding="utf-8", errors="replace") as handle:
+        return [
+            line.strip()
+            for line in handle
+            if any(word.lower() in line.lower() for word in ERROR_WORDS)
+        ]
+
+
 def run_program(env: Dict[str, str], path: str) -> None:
     """Run the program opened at startup (typ. posted by IndexedCAM)."""
     check(os.path.exists(path), "existe el programa " + path)
     hal_set(env, "halui.mode.auto", 1)
     switch_off_on(env, "halui.program.run")
     wait(lambda: hal_bit(env, "halui.program.is-idle"), 300, "el programa", step=1.0)
-    idle = hal_bit(env, "halui.program.is-idle")
-    check(idle, "el programa termina sin errores: " + os.path.basename(path))
+    errors = controller_errors()
+    for line in errors:
+        log("     " + line)
+    check(not errors, "sin errores del controlador: " + os.path.basename(path))
+    check(hal_bit(env, "halui.program.is-idle"), "el programa termina: " + os.path.basename(path))
 
 
 def switch_off_on(env: Dict[str, str], pin: str) -> None:
@@ -264,13 +299,25 @@ def main() -> int:
             log("SKIP falta " + tool)
             return 0
     env: Optional[Dict[str, str]] = None
-    program = sys.argv[1] if len(sys.argv) > 1 else ""
+    programs = [os.path.abspath(item) for item in sys.argv[1:]]
+    if realtime_busy():
+        log("SKIP hay otra instancia de LinuxCNC usando el realtime.")
+        log("     Cierra LinuxCNC (o el simulador) y vuelve a ejecutar este script:")
+        log("     python3 tests/linuxcnc/check_sim.py " + " ".join(sys.argv[1:]))
+        out.close()
+        return 2
     try:
         check(os.path.exists(INI), "existe " + INI)
-        env = start_machine(ini_with(os.path.abspath(program)) if program else None)
+        env = start_machine(ini_with(programs[0]) if programs else None)
         verify(env)
-        if program:
-            run_program(env, os.path.abspath(program))
+        for index, program in enumerate(programs):
+            if index:
+                # un programa por instancia: AXIS no cambia de fichero con el
+                # interprete cargado y el estado modal se arrastraria
+                stop_machine(env)
+                procs.clear()
+                env = start_machine(ini_with(program))
+            run_program(env, program)
         log("PASS")
         return 0
     except Exception:

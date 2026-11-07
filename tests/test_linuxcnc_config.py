@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup  # noqa: E402
-from IndexedCAM.Machine.bc_head import normal_to_bc  # noqa: E402
+from IndexedCAM.Machine.bc_head import bc_to_normal, normal_to_bc  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = os.path.join(ROOT, "configs", "linuxcnc")
@@ -251,3 +251,123 @@ def test_the_interpreter_accepts_the_program(tmp_path):
     canon = output.read_text()
     assert canon.count("SET_G68_FRAME") >= 9, "un plano por orientacion y su cancelacion"
     assert "SET_G68_FRAME(60.0000, 20.0000, 15.0000" in canon
+
+# --- cinematica de 5axiskins, para saber donde acaba cada movimiento ---------
+
+
+def joint_position(tip, b, c, pivot=PIVOT):
+    """Carro (joint 0/1/2) que 5axiskins necesita para poner la punta en ``tip``.
+
+    Del fuente del modulo: ``pos = joints + r`` con
+    ``r = s2r(pivot, c, 180 - b) = (pivot*sin b*cos c, pivot*sin b*sin c, -pivot*cos b)``,
+    de donde ``joint = pos - r``: en horizontal el carro se retrasa ``pivot`` por
+    cada eje del plano y en Z baja ``pivot*(1 - cos b)`` (con B=0 no se mueve).
+    """
+    nx, ny, nz = bc_to_normal(b, c)
+    return (tip[0] - pivot * nx, tip[1] - pivot * ny, tip[2] - pivot * (1.0 - nz))
+
+
+def frame_of(origin, x_axis, normal):
+    """Marco del plano: X dado y Z = normal; Y se cierra con el producto vectorial."""
+    x = unit(x_axis)
+    z = unit(normal)
+    y = (z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0])
+    return origin, x, y, z
+
+
+def unit(vector):
+    length = sum(v * v for v in vector) ** 0.5
+    return tuple(v / length for v in vector)
+
+
+def to_part(plane, position):
+    origin, x_axis, y_axis, z_axis = plane
+    return tuple(
+        origin[i] + position["X"] * x_axis[i] + position["Y"] * y_axis[i] + position["Z"] * z_axis[i]
+        for i in range(3)
+    )
+
+
+def poses_of_program(path, pivot=PIVOT):
+    """(linea, joints, b, c) de cada movimiento del programa, in machine terms."""
+    identity = frame_of((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+    plane = identity
+    position = {"X": 0.0, "Y": 0.0, "Z": 0.0}
+    b = c = 0.0
+    pending = None
+    poses = []
+    with open(path, encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            line_codes = codes(line)
+            block = words(line)
+            for axis in ("X", "Y", "Z"):
+                if axis in block:
+                    position[axis] = block[axis]
+            if "B" in block:
+                b = block["B"]
+            if "C" in block:
+                c = block["C"]
+            if "G69" in line_codes:
+                plane = identity
+            if "G68.2" in line_codes and block.get("Q") == 1:
+                pending = block
+            elif "G68.2" in line_codes and block.get("Q") == 2:
+                plane = frame_of(
+                    (pending["X"], pending["Y"], pending["Z"]),
+                    (pending["I"], pending["J"], pending["K"]),
+                    (block["I"], block["J"], block["K"]),
+                )
+                pending = None
+            elif {"G0", "G1", "G2", "G3"} & set(line_codes):
+                poses.append((number, joint_position(to_part(plane, position), b, c, pivot), b, c))
+    return poses
+
+
+def limit(parser, section, name, default):
+    return float(parser[section].get(name, default))
+
+
+PROGRAMS = ("validate_bc.ngc", "posted_example.ngc")
+
+
+@pytest.mark.parametrize("name", PROGRAMS)
+def test_every_move_fits_the_machine_travel(name):
+    parser = ini()
+    worst = []
+    for number, joints, b, c in poses_of_program(os.path.join(CONFIG, name)):
+        for index, value in enumerate(joints):
+            section = "JOINT_%d" % index
+            low = limit(parser, section, "MIN_LIMIT", -1000.0)
+            high = limit(parser, section, "MAX_LIMIT", 1000.0)
+            worst.append((value - high, value - low, name, number, index, value, low, high))
+        for index, value in ((3, b), (4, c)):
+            section = "JOINT_%d" % index
+            low = limit(parser, section, "MIN_LIMIT", -360.0)
+            high = limit(parser, section, "MAX_LIMIT", 360.0)
+            worst.append((value - high, value - low, name, number, index, value, low, high))
+    above = [item for item in worst if item[0] > 1e-6]
+    below = [item for item in worst if item[1] < -1e-6]
+    message = "linea {} joint {} = {:.3f} fuera de [{}, {}]"
+    assert not above, message.format(above[0][3], above[0][4], above[0][5], above[0][6], above[0][7])
+    assert not below, message.format(below[0][3], below[0][4], below[0][5], below[0][6], below[0][7])
+
+
+def test_z_travel_has_room_on_both_sides_of_the_pivot():
+    """Con B=90 el carro baja ``pivot`` mm; con B=0 sube hasta la punta."""
+    parser = ini()
+    assert limit(parser, "JOINT_2", "MIN_LIMIT", -1000.0) <= -PIVOT
+    highest = max(
+        pose[1][2]
+        for name in PROGRAMS
+        for pose in poses_of_program(os.path.join(CONFIG, name))
+    )
+    assert highest > 0.0, "las retiradas deben subir por encima del cero de la pieza"
+    assert highest <= limit(parser, "JOINT_2", "MAX_LIMIT", 1000.0)
+
+
+def test_joint_position_matches_the_measured_machine():
+    """Valores medidos en LinuxCNC 2.10 con esta config (pivote 250, herramienta 0)."""
+    assert joint_position((60.0, 20.0, 15.0), 90.0, 0.0) == pytest.approx((-190.0, 20.0, -235.0))
+    assert joint_position((30.0, 40.0, 15.0), 90.0, 90.0) == pytest.approx((30.0, -210.0, -235.0))
+    assert joint_position((60.0, 40.0, 30.0), 45.0, 45.0) == pytest.approx((-65.0, -85.0, -43.223), abs=1e-3)
+    assert joint_position((30.0, 20.0, 130.0), 0.0, 0.0) == pytest.approx((30.0, 20.0, 130.0))

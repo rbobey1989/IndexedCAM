@@ -6,6 +6,6 @@ __pycache__/
 configs/linuxcnc/*.var
 configs/linuxcnc/*.var.bak
 configs/linuxcnc/*_cmds.hal
+configs/linuxcnc/indexedcam_run.ini
 # directorio de pruebas manuales
 .scratch/
-configs/linuxcnc/indexedcam_run.ini

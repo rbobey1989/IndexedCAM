@@ -152,6 +152,13 @@ gira en sentido antihorario visto desde +Z**. Si tu cabezal es al revés, usa
 Ambas están en coordenadas locales del plano, así que la retirada es siempre
 **paralela al eje de la herramienta**.
 
+`safe_z` se mide **desde la pieza**, así que un programa puede pedir más
+recorrido del que tiene la máquina en Z+. Con B=0 el carro está justo en la
+altura de la punta: una retirada a 124 mm sobre una cara que está a Z=60 exige
+`Z+ ≥ 184`. Antes de mecanizar comprueba que la altura de retirada cabe en tu
+`[AXIS_Z]MAX_LIMIT`, o reduce el margen de la esfera
+(`IndexedCAM.Core.preview.sphere_for(..., margin=...)`).
+
 ## Arcos
 
 Bajo `G68.2` los bloques se programan en el plano de la cara (X e Y en el

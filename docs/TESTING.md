@@ -217,8 +217,17 @@ cat /tmp/indexedcam_sim.log          # ultima linea: PASS
 ```
 
 Los tests rapidos validan ademas que el INI, el HAL y los planos de
-`validate_bc.ngc` sean coherentes, y que `rs274` acepte el programa
+`validate_bc.ngc` sean coherentes, que `rs274` acepte el programa y que **todos
+los movimientos** de los programas de ejemplo quepan en los limites del INI
 (`tests/test_linuxcnc_config.py`, sin necesidad de arrancar la maquina).
+
+Dos avisos utiles:
+
+- El realtime es unico: cierra cualquier otra instancia de LinuxCNC antes de
+  ejecutar `check_sim.py` (el script lo detecta y sale con codigo 2).
+- Un programa puede retirar por encima del recorrido Z+ de la configuracion. El
+  error tipico es `Linear move on line N would exceed Z's positive limit`; el
+  test de recorridos lo detecta sin abrir LinuxCNC.
 
 ## Postprocesado (#19)
 

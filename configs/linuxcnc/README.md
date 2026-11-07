@@ -26,12 +26,19 @@ y **Home All**.
 | `indexedcam.ini` | 6 joints `XYZBCW`, `B` = joint 3, `C` = joint 4, límites y GUI |
 | `indexedcam.hal` | pivote y longitud de herramienta de `5axiskins` |
 | `indexedcam_vismach.hal` | ventana 3D del cabezal (se puede quitar del INI) |
+| `indexedcam.nml` | canales NML propios (números y puerto distintos de los del sistema) |
 | `indexedcam.tbl` | herramientas T1 (Ø6) y T2 (Ø10), ambas con `Z0` |
 | `validate_bc.ngc` | programa de validación con cuatro orientaciones |
 | `posted_example.ngc` | programa real generado con **Postprocesar** (2 orientaciones, 1 herramienta) |
 
-`indexedcam.var`, `indexedcam.var.bak` e `indexedcam_cmds.hal` los genera
-LinuxCNC al arrancar, no se versionan.
+`indexedcam.var`, `indexedcam.var.bak`, `indexedcam_cmds.hal` e
+`indexedcam_run.ini` los genera LinuxCNC al arrancar, no se versionan.
+
+**Solo puede haber una instancia de LinuxCNC con realtime** en la máquina. Si
+abres esta configuración teniendo otra sesión de LinuxCNC abierta, el arranque
+falla (no es un problema de esta config: `loadrt` no puede compartir el
+realtime). Los canales NML son propios para no pisar los del sistema, pero el
+realtime es único.
 
 ## Cómo se comprueba la orientación
 
@@ -83,8 +90,26 @@ Que la punta caiga en el origen del plano es lo que demuestra que el plano
 3. Cycle Start. Si el programa pide `B` fuera de `-120..120`, la máquina se
    queja por límites: ajusta `[AXIS_B]`/`[JOINT_3]` o cambia la orientación.
 
-Los límites de recorrido (`X/Y ±500`, `Z −500..100`) son los del ejemplo de
-LinuxCNC y dejan sitio para un pivote de 250 mm; no son los de una máquina real.
+## Límites de recorrido
+
+`X/Y ±500`, `Z −500..250`, `B ±120`, `C ±360`, `W −100..500`. No son los de una
+máquina real, pero **tienen que cubrir el pivote**:
+
+- Con **B = 0** el carro queda a la altura de la punta, así que el recorrido
+  **Z+ debe cubrir la altura de retirada**. Un programa que retire a 130 mm por
+  encima de una pieza que está a Z=30 pide `joint 2 = 130`; por eso `Z MAX_LIMIT`
+  es 250 y no 100. Si lo bajas, verás
+  `Linear move on line N would exceed Z's positive limit`.
+- Con **B = 90** el carro baja `pivote` mm respecto a la punta, así que `Z−`
+  tiene que llegar a `−pivote` como mínimo.
+
+Las retiradas que genera IndexedCAM son la esfera de seguridad, medida **desde
+la pieza**: son altas a propósito (una pieza de 60×40×30 con herramienta de
+50 mm retira a ~124 mm sobre el origen de la cara). En una máquina real
+comprueba que caben en su `Z+`. El margen de esa esfera es el parámetro
+`margin` de `IndexedCAM.Core.preview.sphere_for` (10 mm por defecto), que usan
+tanto el Preview como el postprocesador; si lo cambias, cambia en los dos para
+que el G-code siga coincidiendo con lo previsualizado.
 
 ## Comprobación automática
 
@@ -97,14 +122,24 @@ Arranca esta config en un display virtual (`Xvfb`), referencia (home) la
 máquina, manda los cuatro planos por MDI y compara los joints con la tabla de
 arriba. Termina en `PASS`. No toca ninguna máquina real.
 
-Para lanzar además un programa completo (por ejemplo uno generado con
-**Postprocesar**) y comprobar que se ejecuta entero:
+Para lanzar además programas completos (por ejemplo uno generado con
+**Postprocesar**) y comprobar que se ejecutan enteros y **sin errores del
+controlador** (límites de recorrido incluidos):
 
 ```bash
-python3 tests/linuxcnc/check_sim.py configs/linuxcnc/posted_example.ngc
+python3 tests/linuxcnc/check_sim.py \
+    configs/linuxcnc/validate_bc.ngc configs/linuxcnc/posted_example.ngc
 ```
 
-Los tests rápidos (`tests/test_linuxcnc_config.py`) validan el INI, el HAL y que
-cada plano de `validate_bc.ngc` sea exactamente el `LocalFrame` que IndexedCAM
-calcula para esos ángulos B/C, además de que el intérprete `rs274` acepta el
-programa.
+Cada programa se ejecuta en su propia instancia: AXIS no cambia de fichero con
+el intérprete cargado, y arrastraría el estado modal del anterior.
+
+Los tests rápidos (`python3 -m pytest tests/test_linuxcnc_config.py`) validan el
+INI, el HAL, que cada plano de `validate_bc.ngc` sea exactamente el `LocalFrame`
+que IndexedCAM calcula para esos ángulos B/C, y —sin necesidad de arrancar
+LinuxCNC— que **todos los movimientos** de los dos programas quepan en los
+límites del INI, calculando el carro con la misma cinemática que `5axiskins`
+(valores contrastados con la máquina real).
+
+`check_sim.py` sale con código 2 y un aviso si detecta el realtime ocupado por
+otra sesión de LinuxCNC.
