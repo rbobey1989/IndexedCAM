@@ -39,6 +39,11 @@ def config_text(name):
         return handle.read()
 
 
+def program_text(name="validate_bc.ngc"):
+    with open(os.path.join(CONFIG, name), encoding="utf-8") as handle:
+        return handle.read()
+
+
 def program_lines():
     with open(PROGRAM, encoding="utf-8") as handle:
         return [line.rstrip("\n") for line in handle]
@@ -168,16 +173,21 @@ def test_every_joint_referenced_by_hal_exists():
 
 
 def test_comments_have_no_nested_parentheses():
-    for line in program_lines():
-        assert line.count("(") == line.count(")"), line
-        comment = line[line.index("(") :] if "(" in line else ""
-        assert "(" not in comment[1:-1] if comment else True, line
+    """LinuxCNC aborts the program with "Nested comment found"."""
+    for name in PROGRAMS + ("validate_tools.ngc",):
+        for line in program_text(name).splitlines():
+            assert line.count("(") == line.count(")"), line
+            start = line.find("(")
+            if start < 0:
+                continue
+            inner = line[start + 1 : line.rfind(")")]
+            assert "(" not in inner and ")" not in inner, line
 
 
 def plane_frames():
     """(b, c, origin, x_axis, normal) of every G68.2 P3 plane of the program."""
     frames = []
-    angles = {}
+    angles = {"B": 0.0, "C": 0.0}
     pending = None
     for line in program_lines():
         codes_here = codes(line)
@@ -327,7 +337,7 @@ def limit(parser, section, name, default):
     return float(parser[section].get(name, default))
 
 
-PROGRAMS = ("validate_bc.ngc", "posted_example.ngc")
+PROGRAMS = ("validate_bc.ngc", "validate_tools.ngc", "posted_example.ngc")
 
 
 @pytest.mark.parametrize("name", PROGRAMS)

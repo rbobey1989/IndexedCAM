@@ -17,12 +17,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
-from IndexedCAM.Core.post_program import MM, PostOperation, PostOrientation, PostProgram, PostTool
+from IndexedCAM.Core.post_program import (
+    MM,
+    PostMove,
+    PostOperation,
+    PostOrientation,
+    PostProgram,
+    PostTool,
+)
 
 G43, G434, NO_TOOL_LENGTH = "G43", "G43.4", "none"
 FLOOD, MIST = "flood", "mist"
 
 INTEGER_WORDS = "THSPQNO"
+CUTTING = ("G1", "G01", "G2", "G02", "G3", "G03")
 
 
 @dataclass(frozen=True)
@@ -63,6 +71,11 @@ class LinuxCNCConfig:
     line_step: int = 10
     tool_length: str = G434
     coolant: bool = True
+    # CAM writes the ToolController feeds into F, and a freshly created
+    # controller has them at zero, so an operation can arrive with G1 moves and
+    # no usable feed. LinuxCNC refuses that ("cannot do G1 with zero feed
+    # rate"), so the post always establishes a positive feed first.
+    default_feed: float = 300.0
     stop_spindle_between: bool = True
     vertical_before_tool_change: bool = False
     header: Tuple[str, ...] = field(default_factory=tuple)
@@ -77,6 +90,8 @@ class LinuxCNCConfig:
             raise ValueError("tool_length must be 'G43', 'G43.4' or 'none'")
         if self.line_step < 1:
             raise ValueError("line_step must be positive")
+        if not (self.default_feed > 0.0):
+            raise ValueError("default_feed must be positive")
         object.__setattr__(self, "header", tuple(self.header))
 
     @property
@@ -147,6 +162,7 @@ class _Emitter:
         self._tool: Optional[int] = None
         self._spindle = False
         self._coolant = ""
+        self._feed = 0.0
 
     def program(self, program: PostProgram) -> None:
         self._preamble(program)
@@ -265,8 +281,25 @@ class _Emitter:
         if self._config.coolant and operation.coolant and self._coolant != operation.coolant:
             self._out.tag("M8" if operation.coolant == FLOOD else "M7", "refrigerante ON")
             self._coolant = operation.coolant
+        feed = operation.programmed_feed()
+        if feed is None:
+            feed = operation.feed if operation.feed and operation.feed > 0 else self._config.default_feed
+            self._out.tag("F" + _fixed(feed, self._config.feed_decimals), "avance: CAM no lo trae en esta operacion")
+            self._feed = feed
         for move in operation.moves:
-            self._out.block(move.code, move.words, move.comment)
+            self._cut(move)
+
+    def _cut(self, move: PostMove) -> None:
+        """Emit a block, making sure a cutting move never runs with feed 0."""
+        words = move.words
+        own_feed = any(letter == "F" and value > 0.0 for letter, value in words)
+        if not own_feed and move.code.upper() in CUTTING and self._feed <= 0.0:
+            words = (("F", self._config.default_feed),) + tuple(words)
+            self._out.comment("avance por defecto: CAM no lo trae")
+        for letter, value in words:
+            if letter == "F" and value > 0.0:
+                self._feed = value
+        self._out.block(move.code, words, move.comment)
 
 
 class LinuxCNCPost:

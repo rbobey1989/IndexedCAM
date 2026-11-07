@@ -216,6 +216,16 @@ python3 tests/linuxcnc/check_sim.py
 cat /tmp/indexedcam_sim.log          # ultima linea: PASS
 ```
 
+Con argumentos ejecuta ademas esos programas y exige que **no haya errores del
+controlador** (los lee del canal de errores NML) y que la maquina se mueva:
+
+```bash
+python3 tests/linuxcnc/check_sim.py \
+    configs/linuxcnc/validate_bc.ngc \
+    configs/linuxcnc/validate_tools.ngc \
+    configs/linuxcnc/posted_example.ngc
+```
+
 Los tests rapidos validan ademas que el INI, el HAL y los planos de
 `validate_bc.ngc` sean coherentes, que `rs274` acepte el programa y que **todos
 los movimientos** de los programas de ejemplo quepan en los limites del INI
@@ -231,8 +241,9 @@ Dos avisos utiles:
 
 ## Postprocesado (#19)
 
-Pulsa **Postprocesar** en la barra IndexedCAM (requiere operaciones asignadas) y
-elige el fichero `.ngc`. Genera un plano inclinado `G68.2` por orientación, el
+Pulsa **Seguridad** para fijar la altura de retirada de los giros (0 mm =
+mínima; la usan el Preview y el G-code) y **Postprocesar** (requiere operaciones
+asignadas) para elegir el fichero `.ngc`. Genera un plano inclinado `G68.2` por orientación, el
 indexado `B`/`C`, la retirada antes de cada giro y las operaciones en
 coordenadas locales. Detalles y configuración de LinuxCNC en
 [POST_LINUXCNC.md](POST_LINUXCNC.md).

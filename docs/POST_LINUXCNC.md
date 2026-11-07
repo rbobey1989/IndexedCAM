@@ -154,10 +154,43 @@ Ambas están en coordenadas locales del plano, así que la retirada es siempre
 
 `safe_z` se mide **desde la pieza**, así que un programa puede pedir más
 recorrido del que tiene la máquina en Z+. Con B=0 el carro está justo en la
-altura de la punta: una retirada a 124 mm sobre una cara que está a Z=60 exige
-`Z+ ≥ 184`. Antes de mecanizar comprueba que la altura de retirada cabe en tu
-`[AXIS_Z]MAX_LIMIT`, o reduce el margen de la esfera
-(`IndexedCAM.Core.preview.sphere_for(..., margin=...)`).
+altura de la punta: una retirada a 114 mm sobre una cara que está a Z=60 exige
+`Z+ ≥ 174`. Antes de mecanizar comprueba que la altura de retirada cabe en tu
+`[AXIS_Z]MAX_LIMIT`.
+
+### Distancia de seguridad (configurable)
+
+El radio de esa esfera es *media diagonal de la pieza + herramienta +
+portaherramientas* **+ el margen de seguridad**, que se configura en FreeCAD con
+**IndexedCAM → Seguridad** y se guarda en el Job (viaja en el `.FCStd`). Por
+defecto es **0 mm**, es decir la retirada **mínima** que todavía gira el cabezal
+con el portaherramientas fuera de la pieza. Súbelo si el Preview marca colisión
+en los giros.
+
+El mismo número lo usan el Preview y el postprocesador, así que el G-code retira
+exactamente lo que se ve. Implementación: `Core/safety.py` (`SafetyConfig`,
+`JobSafetyStorage`) y `Commands/safety.py`.
+
+## Avances (F)
+
+CAM escribe en el `F` de cada operación el `VertFeed`/`HorizFeed` del
+`ToolController`, y un controlador recién creado los tiene **a cero**: entonces
+CAM emite `G0 F0` y una `G1` sin `F`, y LinuxCNC se niega con *"No se puede
+hacer G1 con velocidad de avance cero"*.
+
+El post no deja pasar nunca ese caso. Antes de los movimientos de una operación
+sin avance propio emite uno, con este orden de preferencia:
+
+1. el `F` que traigan los movimientos de CAM,
+2. el avance del `ToolController` de esa operación (`HorizFeed`, si no está,
+   `VertFeed`),
+3. `LinuxCNCConfig.default_feed` (300 mm/min por defecto).
+
+El bloque va comentado (`avance: CAM no lo trae en esta operacion`) para que se
+vea en el G-code. Además, si un movimiento de corte llegara sin `F` con el
+avance modal a cero, se le inyecta el avance por defecto. Lo correcto sigue
+siendo rellenar los avances en el `ToolController`: así el G-code lleva los
+tuyos.
 
 ## Arcos
 

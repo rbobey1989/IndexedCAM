@@ -146,6 +146,41 @@ try:
     check(blocks(text, "M6")[0].startswith("M6 T"), "tool number from the CAM controller")
     check(any(line.startswith("G43.4 H") for line in text.splitlines()), "tool length on the kinematics")
 
+    cutting = [
+        line for line in text.splitlines()
+        if line.startswith(("G1 ", "G2 ", "G3 "))
+    ]
+    modal, missing = 0.0, []
+    for line in text.splitlines():
+        if not line.startswith(("G1 ", "G2 ", "G3 ", "F", "G0 ")):
+            continue
+        for item in line.split(" (")[0].split():
+            if item.startswith("F"):
+                modal = float(item[1:])
+        if line.startswith(("G1 ", "G2 ", "G3 ")) and modal <= 0.0:
+            missing.append(line)
+    check(cutting and not missing, "%d movimientos de corte, todos con avance: %s"
+          % (len(cutting), missing[:2]))
+    check(not [line for line in text.splitlines() if line.startswith("G1") and "F0" in line],
+          "ningun G1 con F0")
+
+    from IndexedCAM.Core.safety import JobSafetyStorage, SafetyConfig
+
+    stored = JobSafetyStorage(job)
+    check(stored.load() == SafetyConfig(), "sin configurar, la distancia de seguridad es la minima")
+    stored.save(SafetyConfig(30.0))
+    check(stored.load() == SafetyConfig(30.0), "la distancia de seguridad se guarda en el Job")
+    short = build_post(doc, manager, program, bridge, "PostCheck", SafetyConfig())
+    padded = build_post(doc, manager, program, bridge, "PostCheck", SafetyConfig(30.0))
+    check(all(p.safe_z < q.safe_z for p, q in zip(short.orientations, padded.orientations)),
+          "mas margen = retirada mas alta: %s < %s"
+          % (["%.2f" % o.safe_z for o in short.orientations],
+             ["%.2f" % o.safe_z for o in padded.orientations]))
+    check(all(abs(p.safe_z - 30.0 - q.safe_z) < 1e-6
+              for p, q in zip(padded.orientations, short.orientations)),
+          "el margen se suma tal cual a la altura de retirada")
+    stored.save(SafetyConfig())
+
     names = [o.name for o in posted.orientations]
     safe = {o.name: o.safe_z for o in posted.orientations}
     clear = {o.name: o.clearance_z for o in posted.orientations}
@@ -179,6 +214,10 @@ try:
     log("summary:", summary_text(posted, len(text.splitlines())))
 
     check(not os.path.exists(path + ".bak"), "no stray files")
+    example = os.environ.get("INDEXEDCAM_EXAMPLE", "")
+    if example:
+        write_program(text, example)
+        log("ejemplo escrito en", example)
 
     Gui.getMainWindow().close()
     log("PASS")

@@ -78,8 +78,16 @@ def tessellate_tool(tool: Any, tolerance: float = 0.05) -> Any:
     return [(v.x, v.y, v.z) for v in vertices], [tuple(f) for f in faces]
 
 
-def build_clips(document: Any, manager: Any, program: Any, bridge: Any, machine: Optional[BCMachine] = None) -> List[Clip]:
+def build_clips(
+    document: Any,
+    manager: Any,
+    program: Any,
+    bridge: Any,
+    machine: Optional[BCMachine] = None,
+    job: Any = None,
+) -> List[Clip]:
     from IndexedCAM.Commands.program import resolve_program
+    from IndexedCAM.Core.safety import JobSafetyStorage, SafetyConfig
 
     machine = machine or BCMachine()
     items = resolve_program(program, manager, bridge, document)
@@ -92,8 +100,11 @@ def build_clips(document: Any, manager: Any, program: Any, bridge: Any, machine:
     first = setups[items[0].step.setup]
     source = document.getObject(parse_source(first.metadata["source"]).object_name)
     box = source.Shape.BoundBox
+    margin = JobSafetyStorage(job).load().margin if job is not None else SafetyConfig().margin
     sphere = sphere_for(
-        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), machine.envelope
+        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)),
+        machine.envelope,
+        margin,
     )
     # a transition is validated with the tool of the step it leads to
     return PreviewBuilder(
@@ -159,7 +170,7 @@ class PreviewCommand:
         document = FreeCAD.ActiveDocument
         try:
             ctx = open_context(document, selected_objects())
-            clips = build_clips(document, ctx.manager, ctx.program, ctx.bridge)
+            clips = build_clips(document, ctx.manager, ctx.program, ctx.bridge, job=ctx.job)
             stock = stock_for_job(ctx.job) if clips else None
         except JobCancelled:
             return

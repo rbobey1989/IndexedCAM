@@ -24,6 +24,7 @@ Una fase cada vez; cada fase cierra con código, tests y docs. La lógica matem�
 | 16 | #18 | Visualización de herramienta/movimientos y reproductor | Hecho |
 | 17 | #19 | Postprocesador LinuxCNC (planos `G68.2` + B/C + `5axiskins`): ver [POST_LINUXCNC.md](POST_LINUXCNC.md) | Hecho |
 | 18 | — | Configuracion de simulacion LinuxCNC (cabezal B+C, `5axiskins`) y verificacion de los planos: ver [configs/linuxcnc](../configs/linuxcnc/README.md) | Hecho |
+| 19 | — | Distancia de seguridad configurable (0 mm por defecto) y avance garantizado en el G-code: `Commands/safety.py`, `Post/linuxcnc.py` | Hecho |
 
 ## Decisiones
 

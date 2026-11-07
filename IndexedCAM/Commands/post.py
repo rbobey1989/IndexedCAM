@@ -57,10 +57,24 @@ class DocumentPostResources:
         mode = str(getattr(self._operation(operation), "CoolantMode", "") or "").lower()
         return COOLANTS.get(mode, "")
 
+    def feed(self, operation: str) -> Optional[float]:
+        """Feed CAM would use: the horizontal one, else the vertical one.
 
-def build_post(document: Any, manager: Any, program: Any, bridge: Any, name: str = "") -> PostProgram:
+        A freshly created ToolController has both at zero, which is what makes
+        CAM emit ``G1`` blocks without a usable feed.
+        """
+        controller = getattr(self._operation(operation), "ToolController", None)
+        for name in ("HorizFeed", "VertFeed"):
+            value = getattr(getattr(controller, name, None), "Value", 0.0) or 0.0
+            if value > 0.0:
+                return float(value)
+        return None
+
+
+def build_post(document: Any, manager: Any, program: Any, bridge: Any, name: str = "", safety: Any = None) -> PostProgram:
     """Build the ``PostProgram`` of the document's indexed program."""
     from IndexedCAM.Commands.program import resolve_program
+    from IndexedCAM.Core.safety import SafetyConfig
     from IndexedCAM.Machine.bc_machine import BCMachine
 
     items = resolve_program(program, manager, bridge, document)
@@ -69,16 +83,22 @@ def build_post(document: Any, manager: Any, program: Any, bridge: Any, name: str
         return PostProgram(name=name)
     machine = BCMachine()
     resources = DocumentPostResources(document)
-    return PostBuilder(setups, resources, _sphere(document, setups, items, machine), name).build(items)
+    margin = (safety or SafetyConfig()).margin
+    sphere = _sphere(document, setups, items, machine, margin)
+    return PostBuilder(setups, resources, sphere, name).build(items)
 
 
-def _sphere(document: Any, setups: Dict[str, Any], items: Sequence[Any], machine: Any) -> Any:
+def _sphere(
+    document: Any, setups: Dict[str, Any], items: Sequence[Any], machine: Any, margin: float
+) -> Any:
     from IndexedCAM.Core.operation_assignment import parse_source
 
     source = document.getObject(parse_source(setups[items[0].step.setup].metadata["source"]).object_name)
     box = source.Shape.BoundBox
     return sphere_for(
-        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), machine.envelope
+        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)),
+        machine.envelope,
+        margin,
     )
 
 
@@ -119,12 +139,14 @@ class PostCommand:
 
         from IndexedCAM.Commands.context import open_context, selected_objects
         from IndexedCAM.Core.job_context import JobCancelled
+        from IndexedCAM.Core.safety import JobSafetyStorage
 
         document = FreeCAD.ActiveDocument
         try:
             ctx = open_context(document, selected_objects())
             name = str(getattr(ctx.job, "Label", "") or getattr(ctx.job, "Name", ""))
-            post = build_post(document, ctx.manager, ctx.program, ctx.bridge, name)
+            safety = JobSafetyStorage(ctx.job).load()
+            post = build_post(document, ctx.manager, ctx.program, ctx.bridge, name, safety)
         except JobCancelled:
             return
         except (ValueError, KeyError) as error:

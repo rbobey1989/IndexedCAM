@@ -67,6 +67,7 @@ class PostOperation:
     moves: Tuple[PostMove, ...]
     spindle: Optional[int] = None
     coolant: str = ""  # "", "flood" or "mist"
+    feed: Optional[float] = None  # used when CAM leaves a cutting move without F
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "moves", tuple(self.moves))
@@ -74,6 +75,16 @@ class PostOperation:
             raise ValueError("spindle speed must be 1 or greater")
         if self.coolant not in ("", "flood", "mist"):
             raise ValueError("coolant must be '', 'flood' or 'mist'")
+        if self.feed is not None and self.feed < 0:
+            raise ValueError("feed must not be negative")
+
+    def programmed_feed(self) -> Optional[float]:
+        """First positive feed the operation itself carries, if any."""
+        for move in self.moves:
+            for letter, value in move.words:
+                if letter == "F" and value > 0:
+                    return value
+        return None
 
 
 @dataclass(frozen=True)

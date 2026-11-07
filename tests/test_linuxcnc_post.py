@@ -250,3 +250,50 @@ def test_bad_units_are_rejected():
 def test_bad_tool_length_mode_is_rejected():
     with pytest.raises(ValueError):
         LinuxCNCConfig(tool_length="G44")
+
+
+def test_an_operation_without_feed_gets_one_before_cutting():
+    """CAM writes ToolController.VertFeed into F, and a fresh controller is 0."""
+    moves = (PostMove("G0", (("Z", 40.0),)), PostMove("G1", (("Z", 0.0),)),
+             PostMove("G1", (("X", 10.0),)))
+    text = render(top(operations=(operation("A", moves),)))
+    assert "F300.0 (avance: CAM no lo trae en esta operacion)" in text
+    assert "G1 Z0.000" in text
+
+
+def test_the_tool_controller_feed_wins_over_the_default():
+    op = PostOperation("A", "A", T1, (PostMove("G1", (("Z", 0.0),)),), feed=1200.0)
+    text = render(top(operations=(op,)))
+    assert "F1200.0" in text and "F300.0" not in text
+
+
+def test_the_feed_of_the_moves_wins_over_everything():
+    op = PostOperation("A", "A", T1, CONTOUR, feed=1200.0)
+    text = render(top(operations=(op,)))
+    assert "F300.0 (avance: CAM no lo trae" not in text
+    assert "F250.0" in text
+
+
+def test_a_cutting_move_after_a_g0_without_feed_gets_the_default():
+    # CAM emits "G0 F0" followed by G1 moves: dropping the zero feed must not
+    # leave the modal feed at zero.
+    op = PostOperation(
+        "A", "A", T1, (PostMove("G0", (("Z", 40.0),)), PostMove("G1", (("Z", 0.0),)))
+    )
+    text = render(top(operations=(op,)))
+    assert text.count("F300.0") == 1
+    assert "G1 Z0.000" in text
+    for line in text.splitlines():
+        if line.startswith("G1"):
+            assert "F0" not in line
+
+
+def test_zero_feed_rejected():
+    op = PostOperation("A", "A", T1, (), feed=0.0)
+    text = render(top(operations=(op,)), default_feed=500.0)
+    assert "F500.0" in text, "un feed 0 en la operacion no puede llegar al G-code"
+
+
+def test_default_feed_must_be_positive():
+    with pytest.raises(ValueError):
+        LinuxCNCConfig(default_feed=0.0)

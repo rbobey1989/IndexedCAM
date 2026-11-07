@@ -34,8 +34,10 @@ CONFIG = os.path.join(ROOT, "configs", "linuxcnc")
 INI = os.path.join(CONFIG, "indexedcam.ini")
 LOG_PATH = os.environ.get("INDEXEDCAM_LOG", os.path.join(tempfile.gettempdir(), "indexedcam_sim.log"))
 LINUXCNC_LOG = os.path.join(tempfile.gettempdir(), "indexedcam_sim_linuxcnc.log")
+ERRORS = os.path.join(tempfile.gettempdir(), "indexedcam_sim_errors.txt")
+WATCHER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "error_watch.py")
 TOLERANCE = 0.01
-ERROR_WORDS = ("would exceed", "USRMOT: ERROR", "invalid params", "G68", "error:")
+ERROR_WORDS = ("would exceed", "USRMOT: ERROR", "invalid params")
 
 out = open(LOG_PATH, "w", buffering=1)
 procs: List[subprocess.Popen] = []
@@ -148,6 +150,24 @@ def hal_set(env: Dict[str, str], pin: str, value: int) -> None:
     run(["halcmd", "setp", pin, str(value)], env)
 
 
+MODE_PINS = ("manual", "mdi", "auto", "teleop", "joint")
+
+
+def set_mode(env: Dict[str, str], mode: str) -> None:
+    """Select a task mode; the other IN bits must be cleared or halui keeps it."""
+    for pin in MODE_PINS:
+        hal_set(env, "halui.mode." + pin, 0)
+    time.sleep(0.3)
+    hal_set(env, "halui.mode." + mode, 1)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if hal_bit(env, "halui.mode.is-" + mode):
+            time.sleep(0.3)
+            return
+        time.sleep(0.3)
+    raise RuntimeError("no se pudo pasar a modo " + mode)
+
+
 def switch_on(
     env: Dict[str, str], pin: str, read: str, what: str, expect: bool = True, attempts: int = 4
 ) -> None:
@@ -182,12 +202,20 @@ def joints(env: Dict[str, str]) -> Tuple[float, ...]:
 
 
 def ini_with(program: str) -> str:
-    """Copy of the INI that opens ``program`` at startup (it lives in the same dir)."""
+    """Copy of the INI that opens ``program`` at startup.
+
+    AXIS only opens files under the config directory (PROGRAM_PREFIX), so a
+    program from elsewhere is copied there first.
+    """
     if not program:
         return INI
+    local = program
+    if os.path.dirname(os.path.abspath(program)) != os.path.abspath(CONFIG):
+        local = os.path.join(CONFIG, "indexedcam_run.ngc")
+        shutil.copyfile(program, local)
     with open(INI, encoding="utf-8") as handle:
         text = handle.read()
-    text = re.sub(r"(?m)^OPEN_FILE\s*=.*$", "OPEN_FILE = " + program, text)
+    text = re.sub(r"(?m)^OPEN_FILE\s*=.*$", "OPEN_FILE = ./" + os.path.basename(local), text)
     path = os.path.join(CONFIG, "indexedcam_run.ini")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -216,6 +244,18 @@ def start_machine(ini_path: Optional[str] = None) -> Dict[str, str]:
         )
     )
     wait(lambda: gui_ping(env), 90, "la GUI de LinuxCNC (mira " + LINUXCNC_LOG + ")")
+    # el vigilante necesita que los buffers NML existan ya
+    if os.path.exists(ERRORS):
+        os.unlink(ERRORS)
+    procs.append(
+        subprocess.Popen(
+            [sys.executable, WATCHER, ERRORS, os.path.join(CONFIG, "indexedcam.nml")],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=open(os.path.join(tempfile.gettempdir(), "indexedcam_watch.log"), "w"),
+        )
+    )
+    time.sleep(1.5)
     check(True, "el config arranca (INI + HAL + 5axiskins)")
     switch_on(env, "halui.estop.reset", "halui.estop.is-activated", "el reset de emergencia", expect=False)
     hal_set(env, "halui.estop.reset", 0)
@@ -224,7 +264,7 @@ def start_machine(ini_path: Optional[str] = None) -> Dict[str, str]:
     hal_set(env, "halui.home-all", 1)
     wait(lambda: all(hal_bit(env, "joint.{}.homed".format(n)) for n in range(6)), 60, "homing")
     check(True, "6 joints referenciados (B = joint 3, C = joint 4)")
-    hal_set(env, "halui.mode.mdi", 1)
+    set_mode(env, "mdi")
     return env
 
 
@@ -263,28 +303,48 @@ def stop_machine(env: Optional[Dict[str, str]]) -> None:
 
 
 def controller_errors() -> List[str]:
-    """Error lines the controller wrote while running the program."""
-    if not os.path.exists(LINUXCNC_LOG):
-        return []
-    with open(LINUXCNC_LOG, encoding="utf-8", errors="replace") as handle:
-        return [
-            line.strip()
-            for line in handle
-            if any(word.lower() in line.lower() for word in ERROR_WORDS)
-        ]
+    """Errors the controller reported while running the program.
+
+    Two sources: the NML error channel (``error_watch.py``), which is where the
+    interpreter reports zero feed, travel limits or bad modal state, and the
+    launcher log, for problems raised before the channel is up.
+    """
+    errors: List[str] = []
+    if os.path.exists(ERRORS):
+        with open(ERRORS, encoding="utf-8", errors="replace") as handle:
+            errors += [line.strip() for line in handle if line.strip()]
+    if os.path.exists(LINUXCNC_LOG):
+        with open(LINUXCNC_LOG, encoding="utf-8", errors="replace") as handle:
+            errors += [
+                line.strip()
+                for line in handle
+                if any(word.lower() in line.lower() for word in ERROR_WORDS)
+            ]
+    return errors
 
 
 def run_program(env: Dict[str, str], path: str) -> None:
     """Run the program opened at startup (typ. posted by IndexedCAM)."""
     check(os.path.exists(path), "existe el programa " + path)
-    hal_set(env, "halui.mode.auto", 1)
+    set_mode(env, "auto")
+    before = joints(env)
     switch_off_on(env, "halui.program.run")
+    # Un programa puede abortar en milisegundos, asi que "is-running" puede no
+    # llegar a verse: tambien vale que haya movido la maquina o dado un error.
+    wait(
+        lambda: hal_bit(env, "halui.program.is-running")
+        or controller_errors()
+        or joints(env) != before,
+        30,
+        "que arranque el programa",
+    )
     wait(lambda: hal_bit(env, "halui.program.is-idle"), 300, "el programa", step=1.0)
+    time.sleep(1.0)
     errors = controller_errors()
     for line in errors:
         log("     " + line)
     check(not errors, "sin errores del controlador: " + os.path.basename(path))
-    check(hal_bit(env, "halui.program.is-idle"), "el programa termina: " + os.path.basename(path))
+    check(joints(env) != before, "el programa movio la maquina: " + os.path.basename(path))
 
 
 def switch_off_on(env: Dict[str, str], pin: str) -> None:

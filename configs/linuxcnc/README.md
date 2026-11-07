@@ -29,6 +29,7 @@ y **Home All**.
 | `indexedcam.nml` | canales NML propios (números y puerto distintos de los del sistema) |
 | `indexedcam.tbl` | herramientas T1 (Ø6) y T2 (Ø10), ambas con `Z0` |
 | `validate_bc.ngc` | programa de validación con cuatro orientaciones |
+| `validate_tools.ngc` | cambio de herramienta (T1 → T2) entre dos orientaciones |
 | `posted_example.ngc` | programa real generado con **Postprocesar** (2 orientaciones, 1 herramienta) |
 
 `indexedcam.var`, `indexedcam.var.bak`, `indexedcam_cmds.hal` e
@@ -104,12 +105,14 @@ máquina real, pero **tienen que cubrir el pivote**:
   tiene que llegar a `−pivote` como mínimo.
 
 Las retiradas que genera IndexedCAM son la esfera de seguridad, medida **desde
-la pieza**: son altas a propósito (una pieza de 60×40×30 con herramienta de
-50 mm retira a ~124 mm sobre el origen de la cara). En una máquina real
-comprueba que caben en su `Z+`. El margen de esa esfera es el parámetro
-`margin` de `IndexedCAM.Core.preview.sphere_for` (10 mm por defecto), que usan
-tanto el Preview como el postprocesador; si lo cambias, cambia en los dos para
-que el G-code siga coincidiendo con lo previsualizado.
+la pieza** (una pieza de 60×40×30 con herramienta de 50 mm retira a ~99 mm sobre
+el origen de la cara con el ajuste por defecto). En una máquina real comprueba
+que caben en su `Z+`.
+
+La altura se controla con **IndexedCAM → Seguridad** en FreeCAD, que guarda el
+margen en el Job: **0 mm por defecto** (el mínimo geométrico) y lo que haga
+falta si el Preview detecta colisión en los giros. El valor lo usan por igual el
+Preview y el postprocesador.
 
 ## Comprobación automática
 
@@ -123,16 +126,21 @@ máquina, manda los cuatro planos por MDI y compara los joints con la tabla de
 arriba. Termina en `PASS`. No toca ninguna máquina real.
 
 Para lanzar además programas completos (por ejemplo uno generado con
-**Postprocesar**) y comprobar que se ejecutan enteros y **sin errores del
-controlador** (límites de recorrido incluidos):
+**Postprocesar**) y comprobar que se ejecutan enteros, **sin errores del
+controlador** (límites, avances, comentarios anidados) y moviendo la máquina:
 
 ```bash
 python3 tests/linuxcnc/check_sim.py \
-    configs/linuxcnc/validate_bc.ngc configs/linuxcnc/posted_example.ngc
+    configs/linuxcnc/validate_bc.ngc \
+    configs/linuxcnc/validate_tools.ngc \
+    configs/linuxcnc/posted_example.ngc
 ```
 
-Cada programa se ejecuta en su propia instancia: AXIS no cambia de fichero con
-el intérprete cargado, y arrastraría el estado modal del anterior.
+Los errores se leen del **canal de errores NML** del intérprete
+(`tests/linuxcnc/error_watch.py`), no solo del log: un `G1` sin avance, un
+límite de recorrido o un comentario anidado acaban ahí y el log no siempre los
+muestra. Cada programa se ejecuta en su propia instancia, porque AXIS no cambia
+de fichero con el intérprete cargado y arrastraría el estado modal del anterior.
 
 Los tests rápidos (`python3 -m pytest tests/test_linuxcnc_config.py`) validan el
 INI, el HAL, que cada plano de `validate_bc.ngc` sea exactamente el `LocalFrame`
