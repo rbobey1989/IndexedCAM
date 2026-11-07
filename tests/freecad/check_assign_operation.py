@@ -27,6 +27,16 @@ def log(*args):
     out.flush()
 
 
+def finish(ok):
+    """Exit without FreeCAD's window shutdown, which can hang in the AppImage.
+
+    The check writes its log first, then leaves with a real exit code so a
+    runner does not have to parse the log to know whether it passed.
+    """
+    out.flush()
+    os._exit(0 if ok else 1)
+
+
 def check(condition, message):
     log(("ok   " if condition else "FAIL ") + message)
     if not condition:
@@ -329,4 +339,5 @@ try:
 except Exception:
     log(traceback.format_exc())
     log("FAILED")
-Gui.getMainWindow().close()
+    finish(False)
+finish(True)
