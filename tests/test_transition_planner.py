@@ -51,8 +51,10 @@ def test_exit_distance():
 
 
 def test_sphere_around_and_validation():
-    sphere = SafetySphere.around((1, 2, 3), 50.0, Envelope(), margin=10.0)
-    assert sphere.radius == 50 + 40 + 50 + 10
+    """El radio minimo es media diagonal + margen: la herramienta gira radial."""
+    sphere = SafetySphere.around((1, 2, 3), 50.0, margin=10.0)
+    assert sphere.radius == 60.0
+    assert SafetySphere.around((1, 2, 3), 50.0).radius == 50.0
     with pytest.raises(ValueError):
         SafetySphere((0, 0, 0), 0)
 
@@ -157,3 +159,35 @@ def test_travel_limit_makes_transition_fail():
     tight = BCMachine(travel=TravelBox((-1000, -1000, -1000), (1000, 1000, 100)))
     with pytest.raises(TransitionError, match="carrera lineal"):
         planner(machine=tight).plan(Pose(0, 0, (0, 0, 130)), Pose(90.0, 0, (130, 0, 0)))
+
+
+def distance_to_segment(point, start, end):
+    """Shortest distance from a point to the segment start-end."""
+    ax, ay, az = (e - s for s, e in zip(start, end))
+    px, py, pz = (p - s for p, s in zip(point, start))
+    length2 = ax * ax + ay * ay + az * az
+    t = 0.0 if length2 == 0 else max(0.0, min(1.0, (px * ax + py * ay + pz * az) / length2))
+    return (
+        (px - t * ax) ** 2 + (py - t * ay) ** 2 + (pz - t * az) ** 2
+    ) ** 0.5
+
+
+def test_nothing_in_the_envelope_comes_closer_than_the_radius():
+    """El radio minimo basta: con la herramienta radial, todo queda por fuera.
+
+    Es la razon de que no haya que sumar la longitud de la herramienta ni la
+    del portaherramientas al radio de la esfera de seguridad.
+    """
+    from IndexedCAM.Machine.bc_head import bc_to_normal
+
+    envelope = Envelope()
+    sphere = SafetySphere.around((0.0, 0.0, 0.0), 39.05)
+    for b, c in ((0.0, 0.0), (90.0, 0.0), (90.0, 90.0), (45.0, 45.0), (28.9, -119.4)):
+        normal = bc_to_normal(b, c)
+        tip = tuple(n * sphere.radius for n in normal)
+        for pose in envelope.place(tip, b, c):
+            assert distance_to_segment(sphere.center, pose.start, pose.end) >= sphere.radius - 1e-9, (
+                b,
+                c,
+                pose.name,
+            )

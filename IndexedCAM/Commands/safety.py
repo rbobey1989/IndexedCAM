@@ -59,9 +59,11 @@ def _ask_dialog(current: SafetyConfig) -> Optional[float]:
     spin.setValue(current.margin)
     spin.setSpecialValueText("mínima (0 mm)")
     explanation = QtWidgets.QLabel(
-        "Altura adicional de la retirada respecto al mínimo geométrico\n"
-        "(media diagonal de la pieza + herramienta + portaherramientas).\n\n"
-        "0 mm = mínimo. Súbelo si el Preview marca colisión en los giros.\n"
+        "Altura adicional sobre el mínimo geométrico, que es la media\n"
+        "diagonal de la pieza: en el giro la herramienta apunta hacia\n"
+        "fuera, así que su largo y el del portaherramientas no cuentan.\n\n"
+        "0 mm = mínimo. Súbelo si el Preview marca colisión en los giros\n"
+        "o si el portaherramientas barre la pieza al indexar.\n"
         "Se usa en el Preview y en el G-code."
     )
     explanation.setWordWrap(True)

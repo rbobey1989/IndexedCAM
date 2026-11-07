@@ -105,9 +105,10 @@ máquina real, pero **tienen que cubrir el pivote**:
   tiene que llegar a `−pivote` como mínimo.
 
 Las retiradas que genera IndexedCAM son la esfera de seguridad, medida **desde
-la pieza** (una pieza de 60×40×30 con herramienta de 50 mm retira a ~99 mm sobre
-el origen de la cara con el ajuste por defecto). En una máquina real comprueba
-que caben en su `Z+`.
+la pieza**: su radio es la media diagonal de la pieza. En una pieza de 60×40×30
+(39,05 mm de media diagonal) eso son 24 mm sobre la cara superior y 9 mm sobre
+una lateral con el ajuste por defecto. En una máquina real comprueba que caben
+en su `Z+`.
 
 La altura se controla con **IndexedCAM → Seguridad** en FreeCAD, que guarda el
 margen en el Job: **0 mm por defecto** (el mínimo geométrico) y lo que haga

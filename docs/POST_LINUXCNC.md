@@ -160,16 +160,33 @@ altura de la punta: una retirada a 114 mm sobre una cara que está a Z=60 exige
 
 ### Distancia de seguridad (configurable)
 
-El radio de esa esfera es *media diagonal de la pieza + herramienta +
-portaherramientas* **+ el margen de seguridad**, que se configura en FreeCAD con
-**IndexedCAM → Seguridad** y se guarda en el Job (viaja en el `.FCStd`). Por
-defecto es **0 mm**, es decir la retirada **mínima** que todavía gira el cabezal
-con el portaherramientas fuera de la pieza. Súbelo si el Preview marca colisión
-en los giros.
+El radio de esa esfera es la **media diagonal de la pieza + el margen de
+seguridad**. **No** se suma la longitud de la herramienta ni la del
+portaherramientas: en el giro la punta se desliza sobre la esfera con la
+herramienta apuntando **radialmente hacia fuera**, así que el vastago, el
+portaherramientas y el cabezal están siempre *más lejos* del centro que la
+punta. Media diagonal es, por tanto, el radio mínimo que mantiene toda la
+envolvente fuera de la pieza (lo comprueba
+`tests/test_transition_planner.py::test_nothing_in_the_envelope_comes_closer_than_the_radius`
+y, con `Part`, `tests/freecad/check_collision.py`).
 
-El mismo número lo usan el Preview y el postprocesador, así que el G-code retira
-exactamente lo que se ve. Implementación: `Core/safety.py` (`SafetyConfig`,
-`JobSafetyStorage`) y `Commands/safety.py`.
+El margen se configura en FreeCAD con **IndexedCAM → Seguridad**, se guarda en
+el Job (viaja en el `.FCStd`) y por defecto es **0 mm**. El mismo número lo usan
+el Preview y el postprocesador, así que el G-code retira exactamente lo que se
+ve. Implementación: `Core/safety.py` (`SafetyConfig`, `JobSafetyStorage`) y
+`Commands/safety.py`.
+
+Para una pieza de 60×40×30 la media diagonal son 39,05 mm, así que la retirada
+queda **24 mm sobre la cara superior** y **9 mm sobre una cara lateral**. Antes
+de esta corrección eran 124 y 109 mm: se sumaban 100 mm de herramienta y
+portaherramientas que no hacen falta.
+
+**Cuándo subir el margen**: al indexar, el control mantiene la punta y gira el
+cabezal, y en esa maniobra el portaherramientas (radio 20 mm en la configuración
+de simulación) pasa a la altura de la punta. Con una retirada muy corta y una
+pieza ancha, el portaherramientas puede barrer material que esté por debajo.
+Si el Preview marca colisión en un giro, o si tu portaherramientas es ancho y la
+pieza grande, sube el margen hasta que desaparezca.
 
 ## Avances (F)
 

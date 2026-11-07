@@ -1,10 +1,12 @@
 """Safety distance used to retract and index the head (no FreeCAD needed).
 
-The tool tip retracts onto a sphere around the part; ``margin`` is the extra
-clearance added on top of the geometric minimum (part half-diagonal + tool +
-holder). Zero is the smallest height that still turns the head with the holder
-outside the part, and it is the default: retracts that are too high are the most
-common reason a posted program does not fit the machine's Z travel.
+The tool tip retracts onto a sphere around the part whose radius is the part's
+half-diagonal: the head turns with the tool pointing radially outward, so the
+shank, the holder and the head are always further from the centre than the tip
+and nothing else has to be added. ``margin`` is extra clearance on top of that
+radius and defaults to zero, the smallest sphere that works: retracts that are
+too high are the most common reason a posted program does not fit the machine's
+Z travel.
 """
 
 from __future__ import annotations

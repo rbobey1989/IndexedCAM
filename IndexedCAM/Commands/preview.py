@@ -102,9 +102,7 @@ def build_clips(
     box = source.Shape.BoundBox
     margin = JobSafetyStorage(job).load().margin if job is not None else SafetyConfig().margin
     sphere = sphere_for(
-        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)),
-        machine.envelope,
-        margin,
+        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), margin
     )
     # a transition is validated with the tool of the step it leads to
     return PreviewBuilder(

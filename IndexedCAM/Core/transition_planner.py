@@ -16,7 +16,6 @@ from typing import List, Optional, Protocol, Sequence, Tuple
 from IndexedCAM.Core.program import ChainedStep, Pose
 from IndexedCAM.Machine.bc_head import Vector, bc_to_normal
 from IndexedCAM.Machine.bc_machine import BCMachine
-from IndexedCAM.Machine.envelope import Envelope
 
 RETRACT, TO_SPHERE, TURN, FROM_SPHERE, APPROACH = (
     "retract",
@@ -50,11 +49,19 @@ class SafetySphere:
         cls,
         center: Vector,
         half_diagonal: float,
-        envelope: Envelope,
-        margin: float = 10.0,
+        margin: float = 0.0,
     ) -> "SafetySphere":
-        """Stock half-diagonal + tool and holder length + margin."""
-        return cls(center, half_diagonal + envelope.tool.length + envelope.holder.length + margin)
+        """Part half-diagonal + margin: the lowest sphere the head can turn on.
+
+        The tip slides on the sphere with the tool pointing radially outward
+        (see ``TransitionPlanner._build``), so the shank, the holder and the
+        head are always *further* from the centre than the tip. Nothing else
+        has to be added: the smallest safe radius is the one that puts the tip
+        outside the part, plus whatever clearance the user asks for.
+        """
+        if not math.isfinite(margin) or margin < 0.0:
+            raise ValueError("margin must be a non-negative finite number")
+        return cls(center, half_diagonal + margin)
 
     def scaled(self, factor: float) -> "SafetySphere":
         return SafetySphere(self.center, self.radius * factor)

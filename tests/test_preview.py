@@ -65,7 +65,7 @@ def build(checker=None):
     s = setups()
     ends = {"a": ((0, 0, 10), (5, 0, 0)), "b": ((0, 0, 10), (5, 0, 0))}
     items = chain(program, s, ends)
-    sphere = sphere_for(((0, 0, 0), (60, 40, 30)), Envelope())
+    sphere = sphere_for(((0, 0, 0), (60, 40, 30)))
     resources = Resources(checker)
     builder = PreviewBuilder(
         s, resources, lambda op: TransitionPlanner(BCMachine(), checker, sphere)
@@ -119,9 +119,12 @@ def test_decimate_keeps_ends_and_limit():
 
 
 def test_sphere_for_box():
-    sphere = sphere_for(((0, 0, 0), (60, 40, 30)), Envelope(), margin=10.0)
+    sphere = sphere_for(((0, 0, 0), (60, 40, 30)), margin=10.0)
     assert sphere.center == (30.0, 20.0, 15.0)
-    assert sphere.radius == pytest.approx(math.sqrt(60**2 + 40**2 + 30**2) / 2 + 40 + 50 + 10)
+    assert sphere.radius == pytest.approx(math.sqrt(60**2 + 40**2 + 30**2) / 2 + 10)
+    assert sphere_for(((0, 0, 0), (60, 40, 30))).radius == pytest.approx(
+        math.sqrt(60**2 + 40**2 + 30**2) / 2
+    )
 
 
 def test_cylinder_orientation():
@@ -151,7 +154,7 @@ def test_clips_carry_the_tool_mesh_of_their_operation():
         program.add(step)
     s = setups()
     items = chain(program, s, {"a": ((0, 0, 10), (5, 0, 0)), "b": ((0, 0, 10), (5, 0, 0))})
-    sphere = sphere_for(((0, 0, 0), (60, 40, 30)), Envelope())
+    sphere = sphere_for(((0, 0, 0), (60, 40, 30)))
     clips = PreviewBuilder(
         s, MeshResources(checker), lambda op: TransitionPlanner(BCMachine(), checker, sphere)
     ).build(items)

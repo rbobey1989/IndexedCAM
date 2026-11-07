@@ -75,30 +75,23 @@ def build_post(document: Any, manager: Any, program: Any, bridge: Any, name: str
     """Build the ``PostProgram`` of the document's indexed program."""
     from IndexedCAM.Commands.program import resolve_program
     from IndexedCAM.Core.safety import SafetyConfig
-    from IndexedCAM.Machine.bc_machine import BCMachine
-
     items = resolve_program(program, manager, bridge, document)
     setups = {s.name: s for s in manager.list()}
     if not items:
         return PostProgram(name=name)
-    machine = BCMachine()
     resources = DocumentPostResources(document)
     margin = (safety or SafetyConfig()).margin
-    sphere = _sphere(document, setups, items, machine, margin)
+    sphere = _sphere(document, setups, items, margin)
     return PostBuilder(setups, resources, sphere, name).build(items)
 
 
-def _sphere(
-    document: Any, setups: Dict[str, Any], items: Sequence[Any], machine: Any, margin: float
-) -> Any:
+def _sphere(document: Any, setups: Dict[str, Any], items: Sequence[Any], margin: float) -> Any:
     from IndexedCAM.Core.operation_assignment import parse_source
 
     source = document.getObject(parse_source(setups[items[0].step.setup].metadata["source"]).object_name)
     box = source.Shape.BoundBox
     return sphere_for(
-        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)),
-        machine.envelope,
-        margin,
+        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), margin
     )
 
 

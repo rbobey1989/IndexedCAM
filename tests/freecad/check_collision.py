@@ -73,7 +73,7 @@ try:
     arc = [App.Placement()]  # keep import used
     check(len(path_points([]) ) == 0, "empty path has no points")
     limited = BCMachine(travel=TravelBox((-500, -500, -500), (500, 500, 150)))
-    sphere0 = SafetySphere.around((30, 20, 15), 40.0, envelope)
+    sphere0 = SafetySphere.around((30, 20, 15), 40.0)
     try:
         TransitionPlanner(limited, checker, sphere0).plan(
             Pose(0.0, 0.0, (30, 20, 60)), Pose(90.0, 0.0, (100, 20, 15)))
@@ -81,7 +81,7 @@ try:
     except TransitionError as error:
         check("carrera lineal" in str(error), "travel limit reported: %s" % error)
 
-    sphere = SafetySphere.around((30, 20, 15), 40.0, envelope)
+    sphere = SafetySphere.around((30, 20, 15), 40.0)
     planner = TransitionPlanner(BCMachine(), checker, sphere)
     top = Pose(0.0, 0.0, (30, 20, 60))
     side = Pose(90.0, 0.0, (100, 20, 15))

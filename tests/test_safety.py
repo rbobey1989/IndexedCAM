@@ -25,17 +25,15 @@ def test_the_default_is_the_smallest_retract():
 
 
 def test_the_default_matches_the_geometric_minimum_sphere():
-    """Sin margen, la esfera es media diagonal + herramienta + portaherramientas."""
-    envelope = Envelope()
-    sphere = sphere_for(BOX, envelope, SafetyConfig().margin)
+    """Sin margen, la esfera es exactamente la media diagonal de la pieza."""
+    sphere = sphere_for(BOX, SafetyConfig().margin)
     half_diagonal = (60.0**2 + 40.0**2 + 30.0**2) ** 0.5 / 2.0
-    assert sphere.radius == pytest.approx(half_diagonal + envelope.tool.length + envelope.holder.length)
+    assert sphere.radius == pytest.approx(half_diagonal)
 
 
 def test_a_larger_margin_raises_the_sphere():
-    envelope = Envelope()
-    low = sphere_for(BOX, envelope, SafetyConfig(0.0).margin)
-    high = sphere_for(BOX, envelope, SafetyConfig(25.0).margin)
+    low = sphere_for(BOX, SafetyConfig(0.0).margin)
+    high = sphere_for(BOX, SafetyConfig(25.0).margin)
     assert high.radius - low.radius == pytest.approx(25.0)
 
 
@@ -94,8 +92,16 @@ def test_workflow_rejects_an_invalid_value():
 
 
 def test_short_retract_keeps_the_head_inside_a_small_machine():
-    """El margen es lo que hacía que la retirada no cupiera en el recorrido Z."""
-    envelope = Envelope()
-    minimal = sphere_for(BOX, envelope, SafetyConfig().margin)
-    padded = sphere_for(BOX, envelope, 10.0)
+    minimal = sphere_for(BOX, SafetyConfig().margin)
+    padded = sphere_for(BOX, 10.0)
     assert minimal.radius < padded.radius
+
+
+def test_a_long_tool_does_not_inflate_the_sphere():
+    """La herramienta gira apuntando hacia fuera: no se suma su longitud."""
+    half_diagonal = (60.0**2 + 40.0**2 + 30.0**2) ** 0.5 / 2.0
+    long_tool_part = sphere_for(BOX, SafetyConfig().margin)
+    assert long_tool_part.radius == pytest.approx(half_diagonal)
+    envelope = Envelope()
+    assert envelope.tool.length + envelope.holder.length > 50.0
+    assert long_tool_part.radius < half_diagonal + envelope.tool.length
