@@ -164,3 +164,92 @@ def test_clips_carry_the_tool_mesh_of_their_operation():
 def test_clips_without_tool_mesh_fall_back_to_cylinders():
     clips, _ = build()
     assert all(c.tool_mesh is None for c in clips)
+
+
+def test_parking_clip_retracts_and_brings_the_head_back_to_vertical():
+    """El post siempre termina con retirada y cabezal vertical."""
+    from IndexedCAM.Core.preview import PARKING
+    from IndexedCAM.Core.transition_planner import RETRACT, TURN
+
+    checker = Checker()
+    program = Program(MemoryProgramStorage())
+    program.add(Step("Side", "b"))
+    s = setups()
+    items = chain(program, s, {"b": ((0, 0, 10), (5, 0, 0))})
+    resources = Resources(checker)
+    sphere = sphere_for(((0, 0, 0), (60, 40, 30)))
+    clips = PreviewBuilder(
+        s, resources, lambda op: TransitionPlanner(BCMachine(), checker, sphere), sphere
+    ).build(items)
+    parking = clips[-1]
+    assert parking.kind == PARKING
+    assert len(parking) > 5
+    phases = [f.label for f in parking.frames]
+    assert RETRACT in phases and TURN in phases
+    last = parking.frames[-1]
+    assert (last.b, last.c) == (0.0, 0.0), "termina con el cabezal vertical"
+    first = parking.frames[0]
+    assert (first.b, first.c) == (90.0, 0.0), "empieza en la orientacion de la cara"
+    # la retirada lleva la punta a la altura segura del post: Z local = centro + radio
+    from IndexedCAM.Core.post_builder import local_z
+
+    local = s["Side"].local_frame()
+    turn_start = phases.index(TURN)
+    tip = parking.frames[turn_start].tip
+    assert local_z(local, tip) == pytest.approx(
+        local_z(local, sphere.center) + sphere.radius, abs=1e-6
+    )
+
+
+def test_no_parking_clip_when_the_program_ends_vertical():
+    from IndexedCAM.Core.preview import PARKING
+
+    checker = Checker()
+    program = Program(MemoryProgramStorage())
+    program.add(Step("Top", "a"))
+    s = setups()
+    items = chain(program, s, {"a": ((0, 0, 10), (5, 0, 0))})
+    sphere = sphere_for(((0, 0, 0), (60, 40, 30)))
+    clips = PreviewBuilder(
+        s, Resources(checker), lambda op: TransitionPlanner(BCMachine(), checker, sphere), sphere
+    ).build(items)
+    assert PARKING not in [c.kind for c in clips]
+
+
+def test_no_parking_clip_without_a_sphere():
+    from IndexedCAM.Core.preview import PARKING
+
+    clips, _ = build()
+    assert PARKING not in [c.kind for c in clips]
+
+
+def test_playlist_runs_the_selected_clips_in_order():
+    from IndexedCAM.Core.preview import Playlist
+
+    clips, _ = build()
+    everything = Playlist.of(clips)
+    assert len(everything) == sum(len(c) for c in clips)
+    assert everything.clips() == [0, 1, 2]
+    assert everything.at(0) == (0, 0)
+    assert everything.at(len(clips[0])) == (1, 0)
+
+
+def test_playlist_skips_the_clips_not_selected():
+    from IndexedCAM.Core.preview import Playlist
+
+    clips, _ = build()
+    only_operations = Playlist.of(clips, [0, 2])
+    assert only_operations.clips() == [0, 2]
+    assert len(only_operations) == len(clips[0]) + len(clips[2])
+    assert only_operations.first_in(1) is None
+    assert only_operations.first_in(2) == len(clips[0])
+    assert Playlist.of(clips, []).at(0) is None
+
+
+def test_playlist_clamps_out_of_range_positions():
+    from IndexedCAM.Core.preview import Playlist
+
+    clips, _ = build()
+    playlist = Playlist.of(clips)
+    assert playlist.at(10_000) == playlist.at(len(playlist) - 1)
+    assert playlist.at(-5) == (0, 0)

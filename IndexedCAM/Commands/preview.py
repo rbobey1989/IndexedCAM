@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from IndexedCAM.Core.collision_checker import checker_for_operation
 from IndexedCAM.Core.operation_assignment import parse_source
 from IndexedCAM.Core.path_endpoints import path_points
-from IndexedCAM.Core.preview import Clip, PreviewBuilder, describe_tool, sphere_for
+from IndexedCAM.Core.preview import Clip, Playlist, PreviewBuilder, describe_tool, sphere_for
 from IndexedCAM.Core.transition_planner import TransitionPlanner
 from IndexedCAM.Machine.bc_machine import BCMachine
 from IndexedCAM.Machine.envelope import Envelope
@@ -112,6 +112,7 @@ def build_clips(
         setups,
         resources,
         lambda operation: TransitionPlanner(machine, resources.checker(operation), sphere),
+        sphere,
     ).build(items)
 
 
@@ -190,7 +191,12 @@ class PreviewCommand:
 
 
 class PreviewWindow:
-    """Non-modal player: pick a clip, drag the slider or press play."""
+    """Non-modal player over the ticked clips, in order.
+
+    Every entry of the list has a checkbox: the slider and the play button run
+    the ticked ones one after another, so the whole program (operations,
+    transitions and the final return to vertical) is one continuous movement.
+    """
 
     def __init__(self, clips: Sequence[Clip], stock: Any = None, job: Any = None) -> None:
         import FreeCADGui as Gui
@@ -204,6 +210,8 @@ class PreviewWindow:
         self._job = job
         self._job_stock_visible = None
         self._last_refresh = 0.0
+        self._playlist = Playlist.of(self._clips)
+        self._clip_index: Optional[int] = None
         if stock is not None:
             from IndexedCAM.Core.stock_timeline import StockTimeline
 
@@ -214,11 +222,18 @@ class PreviewWindow:
         layout = QtWidgets.QVBoxLayout(self._dialog)
         self._list = QtWidgets.QListWidget()
         for clip in self._clips:
-            self._list.addItem(clip.title + ("  ⚠" if clip.error else "") + ("\n    " + clip.tool if clip.tool else ""))
+            item = QtWidgets.QListWidgetItem(
+                clip.title + ("  ⚠" if clip.error else "") + ("\n    " + clip.tool if clip.tool else "")
+            )
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Checked)
+            self._list.addItem(item)
         self._status = QtWidgets.QLabel()
         self._slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._play = QtWidgets.QPushButton("▶ Reproducir")
+        self._play = QtWidgets.QPushButton("▶ Reproducir seleccionadas")
         self._check = QtWidgets.QPushButton("Buscar colisiones")
+        self._all = QtWidgets.QPushButton("Todas")
+        self._none = QtWidgets.QPushButton("Ninguna")
         self._stock_box = QtWidgets.QCheckBox("Mostrar stock y material retirado")
         self._stock_box.setChecked(self._timeline is not None)
         self._stock_box.setEnabled(self._timeline is not None)
@@ -226,24 +241,87 @@ class PreviewWindow:
         row = QtWidgets.QHBoxLayout()
         row.addWidget(self._play)
         row.addWidget(self._check)
+        selection = QtWidgets.QHBoxLayout()
+        selection.addWidget(QtWidgets.QLabel("Reproducir:"))
+        selection.addWidget(self._all)
+        selection.addWidget(self._none)
+        selection.addStretch()
         for widget in (self._list, self._slider, self._status):
             layout.addWidget(widget)
         layout.addWidget(self._stock_box)
+        layout.addLayout(selection)
         layout.addLayout(row)
         self._timer = QtCore.QTimer(self._dialog)
         self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
         self._list.currentRowChanged.connect(self._select)
+        self._list.itemChanged.connect(self._checked)
         self._slider.valueChanged.connect(self._show)
         self._play.clicked.connect(self._toggle)
         self._check.clicked.connect(self._find_collision)
-        self._dialog.resize(520, 380)
+        self._all.clicked.connect(lambda: self._tick_all(True))
+        self._none.clicked.connect(lambda: self._tick_all(False))
+        self._dialog.resize(560, 420)
+        self._rebuild(0)
         self._list.setCurrentRow(0)
 
     def show(self) -> None:
         self._hide_job_stock()
         self._dialog.show()
         self._show(self._slider.value(), force=True)
+
+    # --- playlist -------------------------------------------------------
+
+    def _selected(self) -> List[int]:
+        from PySide import QtCore
+
+        return [
+            row
+            for row in range(self._list.count())
+            if self._list.item(row).checkState() == QtCore.Qt.Checked
+        ]
+
+    def _rebuild(self, position: Optional[int] = None) -> None:
+        self._playlist = Playlist.of(self._clips, self._selected())
+        self._slider.blockSignals(True)
+        self._slider.setRange(0, max(0, len(self._playlist) - 1))
+        self._slider.setValue(min(position or 0, self._slider.maximum()))
+        self._slider.blockSignals(False)
+        self._clip_index = None
+
+    def _tick_all(self, checked: bool) -> None:
+        from PySide import QtCore
+
+        self._list.blockSignals(True)
+        for row in range(self._list.count()):
+            self._list.item(row).setCheckState(QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked)
+        self._list.blockSignals(False)
+        self._checked(None)
+
+    def _checked(self, item: Any) -> None:
+        current = self._playlist.at(self._slider.value()) if len(self._playlist) else None
+        self._rebuild(0 if current is None else self._playlist.entries.index(current))
+        self._show(self._slider.value(), force=True)
+
+    def _select(self, row: int) -> None:
+        """Clicking a row shows its first frame and includes it in the playlist."""
+        from PySide import QtCore
+
+        if row < 0:
+            return
+        self._timer.stop()
+        self._play.setText("▶ Reproducir seleccionadas")
+        if self._list.item(row).checkState() != QtCore.Qt.Checked:
+            self._list.blockSignals(True)
+            self._list.item(row).setCheckState(QtCore.Qt.Checked)
+            self._list.blockSignals(False)
+            self._rebuild(0)
+        position = self._playlist.first_in(row)
+        if position is not None:
+            self._slider.setValue(position)
+        self._show(self._slider.value(), force=True)
+
+    # --- drawing --------------------------------------------------------
 
     def _hide_job_stock(self) -> None:
         view = getattr(getattr(self._job, "Stock", None), "ViewObject", None)
@@ -258,7 +336,7 @@ class PreviewWindow:
         if view is not None and self._job_stock_visible is not None:
             view.Visibility = self._job_stock_visible
 
-    def _update_stock(self, index: int, force: bool) -> None:
+    def _update_stock(self, clip_index: int, index: int, force: bool) -> None:
         import time
 
         if self._timeline is None:
@@ -266,7 +344,7 @@ class PreviewWindow:
         if not self._stock_box.isChecked():
             self._view.hide_stock()
             return
-        stock = self._timeline.show(max(0, self._list.currentRow()), index)
+        stock = self._timeline.show(clip_index, index)
         now = time.monotonic()
         # while playing, the mesh is rebuilt only a few times per second
         if force or not self._timer.isActive() or now - self._last_refresh >= REFRESH_SECONDS:
@@ -276,33 +354,31 @@ class PreviewWindow:
     def close(self) -> None:
         self._dialog.close()
 
-    @property
-    def _clip(self) -> Clip:
-        return self._clips[max(0, self._list.currentRow())]
-
-    def _select(self, row: int) -> None:
-        if row < 0:
+    def _show(self, position: int, force: bool = False) -> None:
+        entry = self._playlist.at(position)
+        if entry is None:
+            self._status.setStyleSheet("")
+            self._status.setText("No hay nada seleccionado: marca alguna entrada.")
+            self._view.clear()
             return
-        self._timer.stop()
-        self._play.setText("▶ Reproducir")
-        clip = self._clip
-        self._view.show_path(clip.tips())
-        self._slider.blockSignals(True)
-        self._slider.setRange(0, max(0, len(clip) - 1))
-        self._slider.setValue(0)
-        self._slider.blockSignals(False)
-        self._show(0)
-
-    def _show(self, index: int, force: bool = False) -> None:
-        clip = self._clip
+        clip_index, index = entry
+        clip = self._clips[clip_index]
+        if clip_index != self._clip_index:
+            self._clip_index = clip_index
+            self._list.blockSignals(True)
+            self._list.setCurrentRow(clip_index)
+            self._list.blockSignals(False)
+            self._view.show_path(clip.tips())
         if not len(clip):
             self._status.setText(clip.error or "Sin movimientos")
             return
         frame = clip.frames[index]
         hit = clip.collision(index)
         self._view.show_tool(clip.poses(index), collides=bool(hit), mesh=clip.tool_mesh)
-        self._update_stock(index, force)
-        text = "{}  B={:.1f} C={:.1f}  {}".format(clip.title, frame.b, frame.c, frame.label)
+        self._update_stock(clip_index, index, force)
+        text = "{} / {}  ·  {}  B={:.1f} C={:.1f}  {}".format(
+            position + 1, len(self._playlist), clip.title, frame.b, frame.c, frame.label
+        )
         if clip.tool:
             text += "\nHerramienta: " + clip.tool
         if hit:
@@ -315,12 +391,15 @@ class PreviewWindow:
     def _toggle(self) -> None:
         if self._timer.isActive():
             self._timer.stop()
-            self._play.setText("▶ Reproducir")
-        else:
-            if self._slider.value() >= self._slider.maximum():
-                self._slider.setValue(0)
-            self._timer.start()
-            self._play.setText("⏸ Pausa")
+            self._play.setText("▶ Reproducir seleccionadas")
+            return
+        if not len(self._playlist):
+            self._status.setText("No hay nada seleccionado: marca alguna entrada.")
+            return
+        if self._slider.value() >= self._slider.maximum():
+            self._slider.setValue(0)
+        self._timer.start()
+        self._play.setText("⏸ Pausa")
 
     def _tick(self) -> None:
         if self._slider.value() >= self._slider.maximum():
@@ -329,12 +408,13 @@ class PreviewWindow:
         self._slider.setValue(self._slider.value() + 1)
 
     def _find_collision(self) -> None:
-        index = self._clip.first_collision()
-        if index is None:
-            self._status.setStyleSheet("")
-            self._status.setText(self._clip.title + ": sin colisiones")
-        else:
-            self._slider.setValue(index)
+        for position in range(len(self._playlist)):
+            clip_index, index = self._playlist.at(position)  # type: ignore[misc]
+            if self._clips[clip_index].collision(index):
+                self._slider.setValue(position)
+                return
+        self._status.setStyleSheet("")
+        self._status.setText("sin colisiones en lo seleccionado")
 
 
 def register() -> None:

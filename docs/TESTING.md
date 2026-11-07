@@ -271,6 +271,11 @@ programa completo esperado.
 
 ## Previsualización (#18)
 
-Pulsa **Preview** en la barra IndexedCAM (requiere operaciones asignadas, ver Programa). Se abre una ventana no modal con la lista de pasos: cada operación y, entre Setups distintos, su transición. Al elegir una entrada se dibuja su trayectoria (azul) y la herramienta (naranja), el vástago, el portaherramientas y el cabezal con la pose B/C de la muestra. **Deslizador** y **▶ Reproducir** recorren las muestras; si una muestra colisiona, la herramienta se pinta de **rojo** y el estado indica el obstáculo. **Buscar colisiones** salta a la primera muestra con colisión. Las transiciones que no se pudieron validar se marcan con ⚠ y se muestra la ruta intentada. Al cerrar la ventana se limpia la vista 3D.
+Pulsa **Preview** en la barra IndexedCAM (requiere operaciones asignadas, ver Programa). Se abre una ventana no modal con la lista del programa completo: cada operación, entre Setups distintos su transición, y al final la **retirada con el cabezal de vuelta a vertical** (lo último que hace el G-code).
 
-Notas: la transición se valida con la herramienta del paso al que llega; los obstáculos son la pieza (el bruto y el utillaje aún no se definen desde la interfaz). La comprobación en FreeCAD (`check_assign_operation.py`) cubre clips, escena 3D y ventana.
+- Cada entrada tiene una **casilla**. **▶ Reproducir seleccionadas** recorre de corrido las marcadas, en orden: marca todas y ves el programa entero sin ir de una en una. **Todas** / **Ninguna** marcan o desmarcan en bloque.
+- El **deslizador** abarca la selección; al pinchar una entrada se marca y el deslizador salta a su primer fotograma, y al arrastrarlo puede pasar de una entrada a la siguiente (la lista se resalta sola).
+- Se dibuja la trayectoria (azul) y la herramienta con la forma real de su ToolBit, con la pose B/C de la muestra. Si una muestra colisiona, la herramienta se pinta de **rojo** y el estado indica el obstáculo. **Buscar colisiones** salta a la primera muestra con colisión de lo seleccionado.
+- Las transiciones que no se pudieron validar se marcan con ⚠ y se muestra la ruta intentada. Al cerrar la ventana se limpia la vista 3D.
+
+Notas: la transición se valida con la herramienta del paso al que llega; los obstáculos son la pieza, y el portaherramientas y el cabezal solo si se activan en **Seguridad**. El clip final necesita la esfera de seguridad: retira hasta la altura segura y luego gira con la punta quieta, igual que el postprocesador. La comprobación en FreeCAD (`check_assign_operation.py`) cubre clips, selección, escena 3D y ventana.

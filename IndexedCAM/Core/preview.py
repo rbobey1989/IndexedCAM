@@ -8,18 +8,21 @@ is cheap and the viewer only pays for the samples it actually shows.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import local_to_part
 from IndexedCAM.Core.program import ChainedStep
-from IndexedCAM.Core.transition_planner import TransitionPlanner
-from IndexedCAM.Machine.bc_head import Vector
+from IndexedCAM.Core.transition_planner import RETRACT, TURN, SafetySphere, TransitionPlanner
+from IndexedCAM.Machine.bc_head import Vector, bc_to_normal
 from IndexedCAM.Machine.envelope import CylinderPose, Envelope
 
-OPERATION, TRANSITION = "operation", "transition"
+OPERATION, TRANSITION, PARKING = "operation", "transition", "parking"
 MAX_PATH_FRAMES = 400
+RETRACT_STEP = 5.0
+TURN_STEP = 2.0
 
 Probe = Callable[[Vector, float, float], Optional[str]]
 
@@ -94,17 +97,24 @@ def decimate(points: Sequence[Vector], limit: int = MAX_PATH_FRAMES) -> List[Vec
 
 
 class PreviewBuilder:
-    """Turns chained steps into clips: one per operation, plus one per transition."""
+    """Turns chained steps into clips: one per operation, plus one per transition.
+
+    When the program ends with the head tilted, a last ``PARKING`` clip shows
+    what the post processor does then: retract along the tool axis and bring the
+    head back to vertical, which is also why the head is not left tilted.
+    """
 
     def __init__(
         self,
         setups: Dict[str, IndexedSetup],
         resources: StepResources,
         planner_for: Callable[[str], TransitionPlanner],
+        sphere: Optional[SafetySphere] = None,
     ) -> None:
         self._setups = setups
         self._resources = resources
         self._planner_for = planner_for
+        self._sphere = sphere
 
     def build(self, items: Sequence[ChainedStep]) -> List[Clip]:
         clips: List[Clip] = []
@@ -112,6 +122,11 @@ class PreviewBuilder:
             if item.needs_transition and item.previous is not None and item.start is not None:
                 clips.append(self._transition(index, item))
             clips.append(self._operation(index, item))
+        parking = None
+        if clips and items:
+            parking = self._parking(len(items), clips[-1], self._setups[items[-1].step.setup])
+        if parking is not None:
+            clips.append(parking)
         return clips
 
     def _tool_mesh(self, operation: str) -> Any:
@@ -156,6 +171,96 @@ class PreviewBuilder:
             tool=self._tool_label(step.operation),
             tool_mesh=self._tool_mesh(step.operation),
         )
+
+
+    def _parking(self, index: int, last: Clip, setup: IndexedSetup) -> Optional[Clip]:
+        """Retract and bring the head back to vertical, as the post does.
+
+        The retract is the same one the post emits: stay in the plane and raise
+        the tip to the safety height (``safe_z``), then rotate with the tip held,
+        which is what the controller does with an indexed head. Needs the safety
+        sphere, both for that height and so nothing is shown turning inside the
+        material.
+        """
+        if self._sphere is None or not last.frames:
+            return None
+        frame = last.frames[-1]
+        if abs(frame.b) < 1e-9 and abs(frame.c) < 1e-9:
+            return None
+        from IndexedCAM.Core.post_builder import local_z
+
+        local_frame = setup.local_frame()
+        safe = local_z(local_frame, self._sphere.center) + self._sphere.radius
+        axis = bc_to_normal(frame.b, frame.c)
+        distance = max(0.0, safe - local_z(local_frame, frame.tip))
+        frames: List[PreviewFrame] = []
+        count = max(1, int(math.ceil(distance / RETRACT_STEP))) if distance else 0
+        for i in range(1, count + 1):
+            frames.append(
+                PreviewFrame(
+                    tuple(p + a * distance * i / count for p, a in zip(frame.tip, axis)),  # type: ignore[arg-type]
+                    frame.b,
+                    frame.c,
+                    RETRACT,
+                )
+            )
+        out = frames[-1].tip if frames else frame.tip
+        steps = max(1, int(math.ceil(max(abs(frame.b), abs(frame.c)) / TURN_STEP)))
+        for i in range(1, steps + 1):
+            t = i / steps
+            frames.append(PreviewFrame(out, frame.b * (1.0 - t), frame.c * (1.0 - t), TURN))
+        return Clip(
+            PARKING,
+            "Fin: retirada y cabezal vertical",
+            index,
+            frames,
+            last.envelope,
+            last.probe,
+            tool=last.tool,
+            tool_mesh=last.tool_mesh,
+        )
+
+
+@dataclass(frozen=True)
+class Playlist:
+    """Frames of the clips the user ticked, in order.
+
+    ``entries[position]`` is ``(clip index, frame index)``, so the player can
+    run several clips one after another and the viewer still knows which clip
+    (tool, envelope, stock) every frame belongs to.
+    """
+
+    entries: Tuple[Tuple[int, int], ...] = ()
+
+    @classmethod
+    def of(cls, clips: Sequence[Clip], selected: Optional[Sequence[int]] = None) -> "Playlist":
+        indices = range(len(clips)) if selected is None else sorted(set(selected))
+        return cls(
+            tuple(
+                (index, frame)
+                for index in indices
+                if 0 <= index < len(clips)
+                for frame in range(len(clips[index]))
+            )
+        )
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+    def at(self, position: int) -> Optional[Tuple[int, int]]:
+        if not self.entries:
+            return None
+        return self.entries[max(0, min(position, len(self.entries) - 1))]
+
+    def clips(self) -> List[int]:
+        return sorted({index for index, _ in self.entries})
+
+    def first_in(self, clip: int) -> Optional[int]:
+        """Position of the first frame of ``clip``, or None if it is not played."""
+        for position, (index, _) in enumerate(self.entries):
+            if index == clip:
+                return position
+        return None
 
 
 def describe_tool(envelope: Envelope) -> str:

@@ -207,8 +207,11 @@ try:
 
     clips = preview.build_clips(doc, manager, program, bridge)
     kinds = [c.kind for c in clips]
-    check(kinds == ["operation", "transition", "operation", "transition", "operation"],
-          "preview clips: %s" % kinds)
+    check(kinds == ["operation", "transition", "operation", "transition", "operation", "parking"],
+          "preview clips (incluye el fin vertical): %s" % kinds)
+    parking = clips[-1]
+    check(parking.frames[-1].b == 0.0 and parking.frames[-1].c == 0.0,
+          "el clip final termina con el cabezal vertical")
     check(all(c.error is None for c in clips if c.kind == "transition"),
           "transitions are collision-free: %s" % [c.error for c in clips])
     check(all(len(c) > 0 for c in clips), "every clip has samples")
@@ -231,10 +234,21 @@ try:
 
     node = build_stock_node(stock.triangles())
     check(node.getNumChildren() == 4, "stock node has material, hints, points and faces")
+    from PySide import QtCore
+
     window = preview.PreviewWindow(clips, preview.stock_for_job(job), job)
     window.show()
+    check(len(window._playlist) == sum(len(c) for c in clips),
+          "todas las entradas marcadas se reproducen de una vez: %d" % len(window._playlist))
+    window._tick_all(False)
+    check(len(window._playlist) == 0, "sin nada marcado no hay reproduccion")
+    for row in (0, 2):
+        window._list.item(row).setCheckState(QtCore.Qt.Checked)
+    check(window._playlist.clips() == [0, 2],
+          "solo se reproducen las marcadas: %s" % window._playlist.clips())
     window._slider.setValue(window._slider.maximum())
-    window._list.setCurrentRow(len(clips) - 1)
+    check(window._clip_index == 2, "el deslizador recorre hasta la ultima marcada")
+    window._tick_all(True)
     window._slider.setValue(window._slider.maximum())
     check(window._view._stock is not None, "preview window shows the stock")
     window.close()
@@ -256,15 +270,21 @@ try:
     window = preview.PreviewWindow(clips)
     window.show()
     window._list.setCurrentRow(1)
-    check(window._slider.maximum() == len(clips[1]) - 1, "player slider spans the transition")
-    window._slider.setValue(10)
-    check("Transición" in window._status.text() and window._view.visible, "player shows the tool")
+    check(window._slider.maximum() == len(window._playlist) - 1,
+          "el deslizador recorre toda la seleccion: %d" % window._slider.maximum())
+    check(window._slider.value() == window._playlist.first_in(1),
+          "al elegir una entrada el deslizador va a su primer fotograma")
+    start = window._playlist.first_in(1)
+    window._slider.setValue(start + 10)
+    check("Transición" in window._status.text() and window._view.visible,
+          "player shows the transition: %s" % window._status.text()[:60])
     window._toggle()
     window._tick()
-    check(window._slider.value() == 11, "play advances one sample")
+    check(window._slider.value() == start + 11, "play advances one sample")
     window._toggle()
     window._find_collision()
-    check("sin colisiones" in window._status.text(), "collision search reports clean clip")
+    check("sin colisiones" in window._status.text(),
+          "collision search reports clean selection: %s" % window._status.text())
     window.close()
     check(not window._view.visible, "closing the player clears the 3D view")
     program.move(op3.Name, 0)
