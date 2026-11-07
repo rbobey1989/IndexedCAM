@@ -32,6 +32,7 @@ GOLDEN = """%
 (Planos inclinados G68.2; pivot compensado por 5axiskins B gain 1.0 zero 0.0 / C gain 1.0 zero 0.0)
 G21 G90 G17 G94 G40 G80
 G69 (cancela cualquier plano previo)
+G0 B0.000 C0.000 (cabezal vertical antes de tocar el offset)
 G49
 M6 T1 (cambio de herramienta T1 Endmill D12)
 G43.4 H1 (longitud de herramienta)
@@ -61,6 +62,7 @@ G2 X10.000 Y0.000 I5.000 J0.000 F250.0
 G0 Z100.000 (retirada libre para indexar)
 M5 (para el husillo)
 G69
+G0 B0.000 C0.000 (cabezal vertical antes de terminar)
 G49
 M30 (fin de programa)
 %
@@ -194,11 +196,28 @@ def test_coolant_is_not_repeated_for_consecutive_operations():
     assert render(top(operations=operations)).count("M8") == 1
 
 
-def test_vertical_head_before_a_tool_change():
-    text = render(top(), vertical_before_tool_change=True)
-    lines = text.splitlines()
-    vertical = next(i for i, line in enumerate(lines) if "cabezal vertical" in line)
-    assert lines[vertical].startswith("G0 B0.000 C0.000")
+def test_the_head_is_always_vertical_before_cancelling_the_tool_length():
+    """Conmutar el tipo de cinematica inclinado reescribe las coordenadas."""
+    lines = render(top(), side()).splitlines()
+    cancels = [i for i, line in enumerate(lines) if line.startswith("G49")]
+    assert cancels, "el programa cancela la longitud de herramienta"
+    for index in cancels:
+        previous = [l for l in lines[:index] if l.startswith("G0 B")]
+        assert previous and previous[-1].startswith("G0 B0.000 C0.000"), (
+            "G49 debe ir precedido del cabezal vertical: " + lines[index - 1]
+        )
+
+
+def test_the_program_ends_with_the_head_vertical():
+    lines = [l for l in render(top(), side()).splitlines() if l]
+    last_g49 = max(i for i, line in enumerate(lines) if line.startswith("G49"))
+    assert lines[last_g49 - 1].startswith("G0 B0.000 C0.000")
+    assert "M30" in lines[last_g49 + 1]
+
+
+def test_the_vertical_move_uses_the_configured_zeros():
+    text = render(top(), signs=AxisSigns(b_sign=-1.0, c_zero=90.0))
+    assert "G0 B0.000 C-90.000 (cabezal vertical antes de tocar el offset)" in text
 
 
 def test_spindle_is_not_stopped_between_orientations_when_disabled():

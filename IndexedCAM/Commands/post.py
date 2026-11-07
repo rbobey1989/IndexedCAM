@@ -162,8 +162,6 @@ def options_dialog(current: PostSettings, program: PostProgram) -> Optional[Post
     coolant.setChecked(config.coolant)
     stop_spindle = QtWidgets.QCheckBox("Parar el husillo entre orientaciones")
     stop_spindle.setChecked(config.stop_spindle_between)
-    vertical = QtWidgets.QCheckBox("Cabezal vertical antes del cambio de herramienta")
-    vertical.setChecked(config.vertical_before_tool_change)
     numbers = QtWidgets.QCheckBox("Numerar las líneas (N...)")
     numbers.setChecked(config.line_numbers)
 
@@ -197,7 +195,9 @@ def options_dialog(current: PostSettings, program: PostProgram) -> Optional[Post
     control_form.addRow("Longitud de herramienta:", tool_length)
     control_form.addRow(coolant)
     control_form.addRow(stop_spindle)
-    control_form.addRow(vertical)
+    control_form.addRow(
+        QtWidgets.QLabel("El cabezal se pone vertical antes de tocar la longitud\nde herramienta: es obligatorio para no perder las coordenadas.")
+    )
 
     format_group = QtWidgets.QGroupBox("Formato")
     format_form = QtWidgets.QFormLayout(format_group)
@@ -242,7 +242,6 @@ def options_dialog(current: PostSettings, program: PostProgram) -> Optional[Post
             tool_length=tool_length.currentData(),
             coolant=coolant.isChecked(),
             stop_spindle_between=stop_spindle.isChecked(),
-            vertical_before_tool_change=vertical.isChecked(),
             default_feed=default_feed.value(),
             header=config.header,
             signs=AxisSigns(b_sign.currentData(), c_sign.currentData(), b_zero.value(), c_zero.value()),

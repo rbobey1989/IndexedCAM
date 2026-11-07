@@ -48,7 +48,6 @@ class PostSettings:
             "tool_length": config.tool_length,
             "coolant": config.coolant,
             "stop_spindle_between": config.stop_spindle_between,
-            "vertical_before_tool_change": config.vertical_before_tool_change,
             "default_feed": config.default_feed,
             "header": list(config.header),
             "signs": {
@@ -74,7 +73,6 @@ class PostSettings:
             tool_length=data.get("tool_length", "G43.4"),
             coolant=bool(data.get("coolant", True)),
             stop_spindle_between=bool(data.get("stop_spindle_between", True)),
-            vertical_before_tool_change=bool(data.get("vertical_before_tool_change", False)),
             default_feed=float(data.get("default_feed", 300.0)),
             header=tuple(data.get("header", ())),
             signs=AxisSigns(

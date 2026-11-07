@@ -77,7 +77,6 @@ class LinuxCNCConfig:
     # rate"), so the post always establishes a positive feed first.
     default_feed: float = 300.0
     stop_spindle_between: bool = True
-    vertical_before_tool_change: bool = False
     header: Tuple[str, ...] = field(default_factory=tuple)
     signs: AxisSigns = AxisSigns()
 
@@ -191,6 +190,7 @@ class _Emitter:
         self._stop_coolant()
         self._out.block("G69")
         if self._config.tool_length in (G43, G434):
+            self._vertical("cabezal vertical antes de terminar")
             self._out.block("G49")
         self._out.tag("M30", "fin de programa")
         self._out.tag("%")
@@ -228,14 +228,25 @@ class _Emitter:
             self._out.tag("M9", "refrigerante OFF")
             self._coolant = ""
 
+    def _vertical(self, comment: str) -> None:
+        """Head upright: the frames of the kinematics module only agree at B=0.
+
+        Cancelling the tool length (``G49``) or switching to ``G43.4`` makes the
+        controller convert the current position between the machine and the
+        world frames. Tilted, that conversion rewrites the program coordinates to
+        the joint values (hundreds of mm away), and the next ``B``/``C`` move is
+        then planned from those numbers and can exceed the travel. At B = C = 0
+        both frames coincide, so the switch is harmless.
+        """
+        self._out.block(
+            "G0",
+            (("B", self._config.signs.b_word(0.0)), ("C", self._config.signs.c_word(0.0))),
+            comment,
+        )
+
     def _tool_change(self, tool: PostTool) -> None:
-        if self._config.vertical_before_tool_change:
-            self._out.block(
-                "G0",
-                (("B", self._config.signs.b_word(0.0)), ("C", self._config.signs.c_word(0.0))),
-                "cabezal vertical para el cambio",
-            )
         if self._config.tool_length in (G43, G434):
+            self._vertical("cabezal vertical antes de tocar el offset")
             self._out.block("G49")
         self._out.block("M6", (("T", tool.number),), "cambio de herramienta " + tool.describe())
         if self._config.tool_length in (G43, G434):

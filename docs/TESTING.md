@@ -217,7 +217,9 @@ cat /tmp/indexedcam_sim.log          # ultima linea: PASS
 ```
 
 Con argumentos ejecuta ademas esos programas y exige que **no haya errores del
-controlador** (los lee del canal de errores NML) y que la maquina se mueva:
+controlador** (los lee del canal de errores NML), que la maquina se mueva y que
+el programa se pueda **repetir** en la misma sesion (la segunda pasada es donde
+aparecian los problemas de coordenadas al conmutar la cinematica):
 
 ```bash
 python3 tests/linuxcnc/check_sim.py \

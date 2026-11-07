@@ -28,7 +28,6 @@ def test_every_option_survives_a_round_trip():
             tool_length="G43",
             coolant=False,
             stop_spindle_between=False,
-            vertical_before_tool_change=True,
             default_feed=750.0,
             header=("Job: prueba",),
             signs=AxisSigns(b_sign=-1.0, c_sign=-1.0, b_zero=10.0, c_zero=-90.0),

@@ -209,6 +209,29 @@ avance modal a cero, se le inyecta el avance por defecto. Lo correcto sigue
 siendo rellenar los avances en el `ToolController`: así el G-code lleva los
 tuyos.
 
+## Cabezal vertical antes de tocar la longitud de herramienta
+
+El post pone siempre el cabezal vertical (`G0 B… C…` con los ceros configurados)
+**antes** de `G49`/`G43.4`, al cambiar de herramienta y al terminar el programa.
+No es un adorno: es obligatorio.
+
+`G49` y `G43.4` conmutan el **tipo de cinemática** del módulo (primaria ↔
+identidad), y al hacerlo el controlador convierte la posición actual entre el
+marco de la máquina y el del mundo. Con el cabezal **inclinado** esa conversión
+reescribe las coordenadas de programa con los valores de las juntas (cientos de
+mm), y el siguiente movimiento de `B`/`C` se planifica desde esos números, así
+que puede salirse del recorrido. Los dos síntomas típicos, ambos observados:
+
+- al terminar el mecanizado la herramienta "aparece" en unas coordenadas
+  lejanas que no salen de ninguna parte (el DRO, no la máquina);
+- al volver a pulsar play, `Linear move on line 14 would exceed Z's positive
+  limit` en el primer indexado.
+
+Con `B = C = 0` los dos marcos coinciden, así que la conmutación no cambia
+ningún número. De ahí la regla. `tests/linuxcnc/check_sim.py` ejecuta **cada
+programa dos veces seguidas** en la misma sesión y exige que las dos pasadas
+terminen sin errores.
+
 ## Arcos
 
 Bajo `G68.2` los bloques se programan en el plano de la cara (X e Y en el
@@ -236,7 +259,6 @@ de la máquina y del controlador, no de la geometría:
 | Control | longitud de herramienta | `G43.4` |
 | Control | refrigerante (`M8`/`M7`) | sí |
 | Control | parar el husillo entre orientaciones | sí |
-| Control | cabezal vertical antes del cambio de herramienta | no |
 | Formato | unidades (mm/pulgadas), decimales | mm, 3 |
 | Formato | avance por defecto, numerar líneas | 300 mm/min, no |
 

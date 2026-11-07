@@ -350,6 +350,18 @@ def run_program(env: Dict[str, str], path: str) -> None:
     check(os.path.exists(path), "existe el programa " + path)
     set_mode(env, "auto")
     before = joints(env)
+    errors = _run_once(env, before)
+    check(not errors, "sin errores del controlador: " + os.path.basename(path))
+    check(joints(env) != before, "el programa movio la maquina: " + os.path.basename(path))
+    # Segunda pasada en la misma sesion: es donde se destapaba que cancelar la
+    # longitud de herramienta con el cabezal inclinado dejaba las coordenadas
+    # de programa en las de las juntas y el siguiente indexado se salia de
+    # los limites.
+    errors = _run_once(env, joints(env))
+    check(not errors, "el programa se puede repetir: " + os.path.basename(path))
+
+
+def _run_once(env: Dict[str, str], before: Tuple[float, ...]) -> List[str]:
     switch_off_on(env, "halui.program.run")
     # Un programa puede abortar en milisegundos, asi que "is-running" puede no
     # llegar a verse: tambien vale que haya movido la maquina o dado un error.
@@ -365,8 +377,7 @@ def run_program(env: Dict[str, str], path: str) -> None:
     errors = controller_errors()
     for line in errors:
         log("     " + line)
-    check(not errors, "sin errores del controlador: " + os.path.basename(path))
-    check(joints(env) != before, "el programa movio la maquina: " + os.path.basename(path))
+    return errors
 
 
 def switch_off_on(env: Dict[str, str], pin: str) -> None:
