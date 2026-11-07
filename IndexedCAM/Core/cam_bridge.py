@@ -1,23 +1,23 @@
-"""Bridge between IndexedCAM Setups and an existing FreeCAD CAM Job.
+"""Bridge between IndexedCAM Setups and native CAM Jobs.
 
-The Job is created by the user in CAM. It holds every Setup: each Setup contributes a lightweight
-``LocalModel`` kept in the Job's ``Orientations`` group (not in ``Job.Model``: the Job's stock
-is the bounding box of ``Job.Model`` and would grow with every rotated copy), and each CAM operation of that Setup uses a
-face of its local model as ``Base``. Public CAM APIs only; CAM is not modified.
+Every Setup owns a CAM Job (see ``orientation_jobs``) whose model is the part
+already placed in the Setup's local frame, so CAM computes both 2.5D and area
+operations (Adaptive, 3D Surface...) with the tool along the Setup's axis and a
+stock that matches the geometry it sees.
+
+This bridge only moves operations and keeps their geometry, heights and tools
+in sync; CAM itself is never modified.
 """
 
 from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from IndexedCAM.Core import local_model
-from IndexedCAM.Core.document_storage import ensure_orientations_group, orientation_of, orientations_group
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
+from IndexedCAM.Core.orientation_jobs import OrientationJobs, find_container
 from IndexedCAM.Core.program import Step
 from IndexedCAM.Machine.envelope import Envelope
-
-OPERATION_SETUP_PROPERTY = "IndexedSetup"
 
 
 class CamBridgeError(RuntimeError):
@@ -25,60 +25,78 @@ class CamBridgeError(RuntimeError):
 
 
 class CamBridge:
-    """Keeps local models and operations of one existing Job in sync."""
+    """Keeps the orientation Jobs, their local models and their operations in sync."""
 
-    def __init__(self, job: Any, safe_offset: float = 5.0, clearance_offset: float = 10.0) -> None:
-        self.job = job
-        self._document = job.Document
+    def __init__(self, document: Any, safe_offset: float = 5.0, clearance_offset: float = 10.0) -> None:
+        # nothing is created until a Setup (or a setting) has to be stored
+        document = getattr(document, "Document", document)
+        self._document = document
+        self.jobs = OrientationJobs(document, find_container(document))
         self._safe_offset = safe_offset
         self._clearance_offset = clearance_offset
 
-    def _model(self, setup_name: str) -> Any:
-        return local_model.find(orientations_group(self.job), setup_name)
-
+    # -- setups ---------------------------------------------------------------
     def attach_setup(self, source: Any, setup: IndexedSetup) -> Any:
-        """Create (or update) the local model of ``setup`` and add it to the Job."""
-        model = self._model(setup.name)
-        if model is None:
-            model = local_model.create(self._document, source, setup)
-        else:
-            local_model.update(model, setup)
-        group = ensure_orientations_group(self.job)
-        owner = orientation_of(group, setup.name)
-        # a model not yet inside an orientation (or a legacy orientation that is
-        # not a group) stays directly in the Orientations group
-        target = owner if owner is not None and hasattr(owner, "addObject") else group
-        if model not in target.Group and not any(model in getattr(c, "Group", ()) for c in group.Group):
-            target.addObject(model)
+        """Create (or update) the CAM Job of ``setup`` and return it."""
+        job = self.jobs.create(source, setup)
         self._document.recompute()
-        return model
+        return job
 
     def detach_setup(self, setup_name: str) -> None:
-        """Remove the local model of a Setup that has no operations bound."""
-        model = self._model(setup_name)
-        if model is None:
-            return
-        bound = self.operations_of(setup_name)
+        """Remove the Job and local model of a Setup that has no operations."""
+        bound = self.jobs.operations_of(setup_name)
         if bound:
             raise CamBridgeError(
                 "Setup '{}' still has operations: {}".format(
                     setup_name, ", ".join(op.Label for op in bound)
                 )
             )
-        self._document.removeObject(model.Name)
+        self.jobs.remove(setup_name)
+        self._document.recompute()
 
     def rename_setup(self, old: str, new: str) -> None:
-        """Follow a Setup rename: its local model and every operation bound to it.
-
-        Object names stay (expressions and CAM refer to them); only the owning
-        Setup name and the visible label change.
-        """
-        model = self._model(old)
-        if model is not None:
-            local_model.rename(model, new)
-        for operation in self.operations_of(old):
-            setattr(operation, OPERATION_SETUP_PROPERTY, new)
+        """Follow a Setup rename: the Job keeps its object name, only labels change."""
+        self.jobs.rename(old, new)
         self._document.recompute()
+
+    def refresh_all(self) -> None:
+        """Re-bind the geometry of every operation to its Job's model."""
+        for job in self.jobs.jobs():
+            name = self.jobs.name_of(job)
+            for operation in self.jobs.operations_of(name):
+                self.refresh_operation(operation, name)
+
+    # -- operations -----------------------------------------------------------
+    def operations(self) -> List[Any]:
+        return self.jobs.operations()
+
+    def operations_of(self, setup_name: str) -> List[Any]:
+        return self.jobs.operations_of(setup_name)
+
+    def bound_steps(self) -> List[Step]:
+        return self.jobs.bound_steps()
+
+    def setup_of(self, operation: Any) -> Optional[str]:
+        return self.jobs.setup_of_operation(operation)
+
+    def candidates(self) -> List[Any]:
+        """Every operation of the document's CAM Jobs, indexed or not."""
+        from IndexedCAM.Core.job_context import find_jobs
+
+        found: List[Any] = []
+        for job in find_jobs(self._document):
+            for operation in getattr(getattr(job, "Operations", None), "Group", ()):
+                if operation not in found:
+                    found.append(operation)
+        return found
+
+    def stocks(self) -> List[Any]:
+        """Stock object of every orientation Job (hidden while previewing)."""
+        return [self.jobs.stock_of(self.jobs.name_of(job)) for job in self.jobs.jobs()]
+
+    @property
+    def container(self) -> Any:
+        return self.jobs.container
 
     def envelope_for(self, operation: Any, base: Envelope) -> Envelope:
         """``base`` with the cutting tool of the operation's CAM tool controller."""
@@ -91,80 +109,159 @@ class CamBridge:
             float(shank.Value) / 2.0 if shank is not None and shank.Value > 0 else None,
         )
 
-    def operations(self) -> List[Any]:
-        """Every CAM operation of the Job, in Job order."""
-        return list(self.job.Operations.Group)
-
-    def bound_steps(self) -> List[Step]:
-        """(Setup, operation) of every bound operation, in Job order."""
-        return [
-            Step(getattr(op, OPERATION_SETUP_PROPERTY), op.Name)
-            for op in self.operations()
-            if getattr(op, OPERATION_SETUP_PROPERTY, None)
-        ]
-
-    def operations_of(self, setup_name: str) -> List[Any]:
-        return [
-            op
-            for op in self.operations()
-            if getattr(op, OPERATION_SETUP_PROPERTY, None) == setup_name
-        ]
-
     def bind_operation(self, operation: Any, setup_name: str, face: Optional[str] = None) -> None:
-        """Orient an existing Job operation to a Setup.
+        """Move ``operation`` into the Setup's Job and orient it to that model.
 
-        Its Base faces are moved to the same faces of the Setup's local model
-        (face names are shared with the source). An operation without Base would
-        machine the whole Job model, so it gets ``face`` (the Setup's own face).
-        Its heights follow the local model.
+        Its Base faces are moved to the same faces of the Job's model (face
+        names are shared with the source). An operation without Base would
+        machine the whole model, so it gets ``face`` (the Setup's own face).
         """
-        model = self._model(setup_name)
-        if model is None:
-            raise CamBridgeError("Setup '{}' has no local model".format(setup_name))
-        if not hasattr(operation, OPERATION_SETUP_PROPERTY):
-            operation.addProperty(
-                "App::PropertyString", OPERATION_SETUP_PROPERTY, "IndexedCAM", "Owning Setup"
-            )
-        setattr(operation, OPERATION_SETUP_PROPERTY, setup_name)
-        base = getattr(operation, "Base", None)
-        if base:
-            subs: List[str] = []
-            for _, names in base:
-                subs.extend(n for n in names if n not in subs)
-            operation.Base = [(model, subs)]
-        elif face:
-            operation.Base = [(model, [face])]
-        self.refresh_operation(operation)
+        job = self.jobs.find(setup_name)
+        if job is None:
+            raise CamBridgeError("Setup '{}' has no CAM Job".format(setup_name))
+        self._move_to(operation, job)
+        self._rebuild_base(operation, setup_name, face)
+        self._rebase_depths(operation, float(self.jobs.model(setup_name).Shape.BoundBox.ZMax))
+        self.refresh_operation(operation, setup_name)
 
-    def refresh_operation(self, operation: Any) -> OperationHeights:
-        """Bind the operation heights to its Setup's local model (and return them)."""
-        name = getattr(operation, OPERATION_SETUP_PROPERTY, None)
-        model = self._model(name) if name else None
-        if model is None:
-            raise CamBridgeError("Operation '{}' is not bound to a Setup".format(operation.Label))
+    def _move_to(self, operation: Any, job: Any) -> None:
+        owner = self._owner_job(operation)
+        if owner is not None and owner is not job:
+            # the old Job keeps its tool table: its user still creates
+            # operations there, and CAM needs a controller for that
+            owner.Operations.removeObject(operation)
+        if not any(op.Name == operation.Name for op in getattr(job.Operations, "Group", ())):
+            job.Proxy.addOperation(operation)
+        controller = getattr(operation, "ToolController", None)
+        if controller is not None:
+            operation.ToolController = self._controller_in(job, controller)
+
+    def _controller_in(self, job: Any, controller: Any) -> Any:
+        """The Job's own controller for the same tool.
+
+        A CAM tool table cannot be shared: adding a controller to a Job's Tools
+        group removes it from the Job it was in, which would leave that Job
+        without any tool. The moved operation gets a copy instead (same tool,
+        same number, same feeds), and repeats of the same tool share it.
+        """
+        for existing in getattr(job.Tools, "Group", ()):
+            if existing.Name == controller.Name:
+                return existing
+            if (
+                getattr(existing, "Tool", None) is getattr(controller, "Tool", None)
+                and existing.ToolNumber == controller.ToolNumber
+            ):
+                return existing
+        copy = _copy_controller(controller)
+        job.Proxy.addToolController(copy)
+        return copy
+
+    def _owner_job(self, operation: Any) -> Any:
+        from PathScripts import PathUtils
+
+        return PathUtils.findParentJob(operation)
+
+    def _rebuild_base(self, operation: Any, setup_name: str, face: Optional[str]) -> None:
+        base = getattr(operation, "Base", None)
+        subs: List[str] = []
+        for _, names in base or ():
+            subs.extend(name for name in names if name not in subs)
+        if not subs and not face:
+            return
+        model = self.jobs.model(setup_name)
+        operation.Base = [(model, subs or [face])]
+
+    def _rebase_depths(self, operation: Any, top: float) -> None:
+        """Keep the cut depth of an operation that moves to another frame.
+
+        ``FinalDepth`` is a local Z, so a value computed against the part frame
+        would cut through everything in a rotated one. The distance below the
+        previous top (which is the depth of cut the user asked for) is kept.
+        """
+        old_top = _number(operation, "StartDepth")
+        final = _number(operation, "FinalDepth")
+        if old_top is None or final is None:
+            return
+        # StartDepth is re-driven by an expression right after this call
+        operation.FinalDepth = final - (old_top - top)
+
+    def refresh_operation(self, operation: Any, setup_name: Optional[str] = None) -> OperationHeights:
+        """Bind the operation heights to its Setup's model (and return them)."""
+        name = setup_name or self.setup_of(operation)
+        if name is None:
+            raise CamBridgeError("Operation '{}' is not in an indexed Job".format(operation.Label))
+        model = self.jobs.model(name)
         heights = heights_above(
-            model.Shape.BoundBox.ZMax, self._safe_offset, self._clearance_offset
+            float(model.Shape.BoundBox.ZMax), self._safe_offset, self._clearance_offset
         )
-        # Expressions keep the heights tied to the local model, so a change of
-        # the source model never leaves the operation with stale depths.
+        # Expressions keep the heights tied to the model, so a change of the
+        # source part never leaves the operation with stale depths.
         top = "{}.Shape.BoundBox.ZMax * 1 mm".format(model.Name)
         for prop, offset in (
             ("StartDepth", 0.0),
             ("SafeHeight", self._safe_offset),
             ("ClearanceHeight", self._clearance_offset),
         ):
+            if not hasattr(operation, prop):
+                continue
             operation.setExpression(prop, "{} + {} mm".format(top, offset))
         # CAM draws every path in the Job frame (tool along +Z). The operation's
         # Placement moves it back onto the part, so the path is seen on the face
-        # it machines, with the tool pointing along the Setup's axis. The Path
-        # itself stays in the local frame.
-        operation.Placement = model.LocalPlacement.inverse()
+        # it machines with the tool along the Setup's axis. The Path itself stays
+        # in the local frame, which is what the post and the preview expect.
+        placement = self._local_placement(name)
+        if placement is not None and hasattr(operation, "Placement"):
+            operation.Placement = placement.inverse()
         operation.touch()
         self._document.recompute()
         return heights
 
-    def refresh_all(self) -> None:
-        """Refresh every bound operation (after the source model changed)."""
-        for op in self.operations():
-            if getattr(op, OPERATION_SETUP_PROPERTY, None):
-                self.refresh_operation(op)
+    def _local_placement(self, setup_name: str) -> Any:
+        for child in getattr(self.jobs.container, "Group", ()):
+            if getattr(child, "SetupName", "").casefold() == setup_name.casefold() and hasattr(child, "LocalPlacement"):
+                return child.LocalPlacement
+        return None
+
+
+def _number(operation: Any, prop: str) -> Optional[float]:
+    """Numeric value of a CAM property (``Value`` for quantities), if any."""
+    value = getattr(operation, prop, None)
+    if value is None:
+        return None
+    try:
+        return float(getattr(value, "Value", value))
+    except (TypeError, ValueError):
+        return None
+
+
+CONTROLLER_PROPERTIES = (
+    "ToolNumber",
+    "SpindleSpeed",
+    "SpindleDir",
+    "VertFeed",
+    "HorizFeed",
+    "VertRapid",
+    "HorizRapid",
+    "CoolantMode",
+    "Tool",
+)
+
+
+def _copy_controller(controller: Any) -> Any:
+    """A new tool controller with the same tool, number and speeds."""
+    import Path.Tool.Controller as PathToolController
+
+    copy = PathToolController.Create(
+        str(getattr(controller, "Label", "") or "TC"),
+        tool=getattr(controller, "Tool", None),
+        toolNumber=int(getattr(controller, "ToolNumber", 1) or 1),
+    )
+    for prop in CONTROLLER_PROPERTIES:
+        if prop == "Tool" or not hasattr(controller, prop) or not hasattr(copy, prop):
+            continue
+        try:
+            setattr(copy, prop, getattr(controller, prop))
+        except (AttributeError, TypeError):
+            pass
+    copy.Label = str(getattr(controller, "Label", "") or copy.Label)
+    return copy

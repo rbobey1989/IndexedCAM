@@ -116,11 +116,16 @@ def test_loading_duplicate_names_rejected():
 
 
 class FakeObject:
-    def __init__(self):
+    """Minimal FreeCAD object: dynamic properties and a Visibility flag."""
+
+    def __init__(self, document, name):
+        self.Document = document
+        self.Name = name
         self.modes = {}
+        self.Visibility = True
 
     def addProperty(self, kind, name, group, doc):
-        assert kind == "App::PropertyString"
+        assert kind in ("App::PropertyString", "App::PropertyBool")
         setattr(self, name, "")
 
     def setEditorMode(self, name, mode):
@@ -135,8 +140,8 @@ class FakeDocument:
         return self.objects.get(name)
 
     def addObject(self, kind, name):
-        assert kind == "App::FeaturePython"
-        self.objects[name] = FakeObject()
+        assert kind == "App::DocumentObjectGroup"
+        self.objects[name] = FakeObject(self, name)
         return self.objects[name]
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Protocol, Tuple
+from typing import Any, Optional, Protocol, Tuple
 
 Vector3 = Tuple[float, float, float]
 
@@ -56,7 +56,7 @@ class FaceAnalysis:
 class FaceAnalyzer:
     """Analyze FreeCAD faces without depending on FreeCADGui or the document."""
 
-    def analyze(self, face: FaceLike) -> FaceAnalysis:
+    def analyze(self, face: FaceLike, rotation: Optional[Any] = None) -> FaceAnalysis:
         """Return normal, center, area and orientation metadata for ``face``.
 
         The normal is evaluated at the midpoint of the face parameter bounds.
@@ -82,7 +82,13 @@ class FaceAnalyzer:
         u = (u_min + u_max) / 2.0
         v = (v_min + v_max) / 2.0
 
-        normal = self._vector(face.normalAt(u, v), "face normal")
+        # FreeCAD reports ``normalAt`` in the shape's own frame, while the
+        # center and every other point come already placed, so a part with a
+        # Placement would otherwise yield an orientation that ignores it.
+        sampled = face.normalAt(u, v)
+        if rotation is not None:
+            sampled = rotation.multVec(sampled)
+        normal = self._vector(sampled, "face normal")
         magnitude = math.hypot(*normal)
         if magnitude == 0.0:
             raise ValueError("face normal must not be a zero-length vector")

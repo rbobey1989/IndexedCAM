@@ -88,19 +88,22 @@ def build_post(document: Any, manager: Any, program: Any, bridge: Any, name: str
 
 
 def _sphere(document: Any, setups: Dict[str, Any], items: Sequence[Any], margin: float) -> Any:
-    from IndexedCAM.Core.operation_assignment import parse_source
+    from IndexedCAM.Core.operation_assignment import source_box
 
-    source = document.getObject(parse_source(setups[items[0].step.setup].metadata["source"]).object_name)
-    box = source.Shape.BoundBox
-    return sphere_for(
-        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), margin
-    )
+    return sphere_for(source_box(document, setups[items[0].step.setup]), margin)
 
 
 def write_program(text: str, path: str) -> None:
     """Write the G-code as LF line endings (LinuxCNC is happier with them)."""
     with open(path, "w", encoding="ascii", errors="replace", newline="\n") as handle:
         handle.write(text)
+
+
+def program_name(document: Any) -> str:
+    """Program name: the .FCStd file name, else the document name."""
+    filename = getattr(document, "FileName", "") or ""
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    return stem or str(getattr(document, "Name", "") or "program")
 
 
 def default_path(document: Any, name: str) -> str:
@@ -272,19 +275,16 @@ class PostCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
-        from IndexedCAM.Commands.context import open_context, selected_objects
-        from IndexedCAM.Core.job_context import JobCancelled
-        from IndexedCAM.Core.post_settings import JobPostStorage
-        from IndexedCAM.Core.safety import JobSafetyStorage
+        from IndexedCAM.Commands.context import build_context
+        from IndexedCAM.Core.post_settings import DocumentPostStorage
+        from IndexedCAM.Core.safety import DocumentSafetyStorage
 
         document = FreeCAD.ActiveDocument
         try:
-            ctx = open_context(document, selected_objects())
-            name = str(getattr(ctx.job, "Label", "") or getattr(ctx.job, "Name", ""))
-            safety = JobSafetyStorage(ctx.job).load()
+            ctx = build_context(document)
+            name = program_name(document)
+            safety = DocumentSafetyStorage(document).load()
             post = build_post(document, ctx.manager, ctx.program, ctx.bridge, name, safety)
-        except JobCancelled:
-            return
         except (ValueError, KeyError) as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return
@@ -293,7 +293,7 @@ class PostCommand:
                 Gui.getMainWindow(), DIALOG_TITLE, "El programa está vacío: asigna operaciones primero."
             )
             return
-        storage = JobPostStorage(ctx.job)
+        storage = DocumentPostStorage(document)
         settings = options_dialog(storage.load(), post)
         if settings is None:
             return

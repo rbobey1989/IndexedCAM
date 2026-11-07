@@ -36,6 +36,18 @@ class Face:
         return Vector(u, v, 4)
 
 
+class Rotation:
+    """Minimal stand-in for App.Rotation: maps -Z onto +X."""
+
+    def multVec(self, vector):
+        return Vector(-vector.z, vector.y, vector.x)
+
+
+def test_placement_rotation_is_applied_to_the_normal():
+    result = FaceAnalyzer().analyze(Face(), Rotation())
+    assert result.normal == pytest.approx((1.0, 0.0, 0.0))
+
+
 def test_extracts_face_geometry_and_normalizes_normal():
     result = FaceAnalyzer().analyze(Face())
 

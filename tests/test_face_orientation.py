@@ -66,9 +66,28 @@ class FakeTriad:
         self.cleared += 1
 
 
+class Shape:
+    def __init__(self):
+        self.Placement = type("Placement", (), {"Rotation": "rotacion"})()
+
+
+class SelectedObject:
+    def __init__(self, subs, name="Box", shape=None):
+        self.SubObjects = subs
+        self.SubElementNames = ["Face%d" % (i + 1) for i in range(len(subs))]
+        self.ObjectName = name
+        self.Object = type("Obj", (), {"Shape": shape})()
+
+
 def test_extract_face_ok():
     selected = extract_face([Selection([Face()], ["Face3"])])
     assert selected.label == "Box.Face3"
+    assert selected.rotation is None
+
+
+def test_extract_face_keeps_the_object_rotation():
+    selected = extract_face([SelectedObject([Face()], shape=Shape())])
+    assert selected.rotation == "rotacion"
 
 
 @pytest.mark.parametrize(

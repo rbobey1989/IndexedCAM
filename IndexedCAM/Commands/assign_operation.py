@@ -1,13 +1,13 @@
-"""Assign Operation command: orient existing CAM operations to a Setup.
+"""Assign Operation command: move CAM operations into an orientation Job.
 
 Operations are created by the user in the native CAM workbench; this command
-only moves them to the Setup's local model so they are machined oriented to it.
+moves them to the Setup's Job (whose model is already oriented) so CAM
+computes them with the tool along the Setup's axis.
 """
 
 from __future__ import annotations
 
 from IndexedCAM.Commands.transaction import DocumentTransaction
-from IndexedCAM.Core.job_context import JobCancelled
 from IndexedCAM.Core.operation_assignment import AssignmentError, AssignOperationWorkflow
 
 COMMAND_NAME = "IndexedCAM_AssignOperation"
@@ -39,12 +39,12 @@ class AssignOperationCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
-        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Commands.context import build_context
         from IndexedCAM.Commands.dialogs import choose_setup_and_operations
 
         document = FreeCAD.ActiveDocument
         try:
-            ctx = open_context(document, selected_objects())
+            ctx = build_context(document)
             ctx.assigner.sync_operations()
             assignment = AssignOperationWorkflow(
                 ctx.manager,
@@ -55,8 +55,6 @@ class AssignOperationCommand:
                 ),
                 lambda: DocumentTransaction(document, "Assign operations to setup"),
             ).run()
-        except JobCancelled:
-            return
         except (AssignmentError, ValueError) as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

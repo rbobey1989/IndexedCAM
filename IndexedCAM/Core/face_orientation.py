@@ -18,10 +18,16 @@ class SelectionError(ValueError):
 
 @dataclass(frozen=True)
 class SelectedFace:
-    """A face taken from the FreeCAD selection and its readable origin."""
+    """A face taken from the FreeCAD selection and its readable origin.
+
+    ``rotation`` is the placement rotation of the object the face belongs to:
+    FreeCAD reports face normals in the shape's own frame, so it is needed to
+    get the direction the tool must follow in the document.
+    """
 
     face: Any
     label: str
+    rotation: Any = None
 
 
 @dataclass(frozen=True)
@@ -46,13 +52,23 @@ def extract_face(selection: Sequence[Any]) -> SelectedFace:
                 )
             name = names[index] if index < len(names) else "Face"
             faces.append(
-                SelectedFace(sub, "{}.{}".format(getattr(item, "ObjectName", "?"), name))
+                SelectedFace(
+                    sub,
+                    "{}.{}".format(getattr(item, "ObjectName", "?"), name),
+                    _placement_rotation(item),
+                )
             )
     if not faces:
         raise SelectionError("Selecciona una cara en la vista 3D.")
     if len(faces) > 1:
         raise SelectionError("Selecciona exactamente una cara.")
     return faces[0]
+
+
+def _placement_rotation(item: Any) -> Any:
+    """Rotation of the object's shape placement (None when it has no shape)."""
+    placement = getattr(getattr(getattr(item, "Object", None), "Shape", None), "Placement", None)
+    return getattr(placement, "Rotation", None)
 
 
 class FaceOrientationService:
@@ -69,7 +85,7 @@ class FaceOrientationService:
 
     def orient(self, selected: SelectedFace) -> FaceOrientation:
         """Analyze the face and solve B/C (may raise ``ValueError``)."""
-        analysis = self._analyzer.analyze(selected.face)
+        analysis = self._analyzer.analyze(selected.face, selected.rotation)
         solution = self._solver.solve(analysis.normal)
         return FaceOrientation(selected.label, analysis, solution)
 

@@ -1,19 +1,19 @@
-"""Keeps the IndexedCAM helper objects (local models, orientation groups) hidden
-after a document is reopened."""
+"""Keeps the IndexedCAM helper objects (container, local models) hidden after a
+document is reopened."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from IndexedCAM.Core.document_storage import GROUP_MARKER, ORIENTATION_DATA
+from IndexedCAM.Core.orientation_jobs import CONTAINER_MARKER, SETUP_PROPERTY
 
 _observer: Any = None
 
 
 def is_helper(obj: Any) -> bool:
     return bool(
-        hasattr(obj, GROUP_MARKER)
-        or hasattr(obj, ORIENTATION_DATA)
+        hasattr(obj, CONTAINER_MARKER)
+        or hasattr(obj, SETUP_PROPERTY)
         or (hasattr(obj, "LocalPlacement") and hasattr(obj, "SetupName"))
     )
 

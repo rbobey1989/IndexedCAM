@@ -1,36 +1,67 @@
-"""Store setups as JSON inside a FreeCAD document (persisted in the FCStd)."""
+"""Store IndexedCAM data as JSON inside the document (persisted in the .FCStd).
+
+Everything IndexedCAM owns lives in one hidden container object (see
+``orientation_jobs.container``): the setups, the program order, the post
+options and the safety distance, plus the orientation CAM Jobs and the local
+models they follow. A property is only created on the first save, so merely
+opening or analyzing a document never modifies it.
+"""
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-CONTAINER_NAME = "IndexedCAM_Setups"
+CONTAINER_NAME = "IndexedCAM"
 PROPERTY_NAME = "SetupsJson"
 PROGRAM_PROPERTY_NAME = "StepsJson"
+GROUP_TITLE = "IndexedCAM"
+
+
+def orientations_group(owner: Any) -> Optional[Any]:
+    """The IndexedCAM container of ``owner``'s document, or None."""
+    from IndexedCAM.Core.orientation_jobs import find_container
+
+    return find_container(getattr(owner, "Document", owner))
+
+
+def ensure_orientations_group(owner: Any) -> Any:
+    """The IndexedCAM container of ``owner``'s document, created if missing."""
+    from IndexedCAM.Core.orientation_jobs import container
+
+    return container(getattr(owner, "Document", owner))
+
+
+def hide_group(group: Any) -> None:
+    """The container (and its groups) must never show up in the 3D view."""
+    group.Visibility = False
+    view = getattr(group, "ViewObject", None)
+    if view is not None:
+        view.Visibility = False
+
+
+def _string_property(owner: Any, name: str, tooltip: str) -> None:
+    if not hasattr(owner, name):
+        owner.addProperty("App::PropertyString", name, GROUP_TITLE, tooltip)
+        owner.setEditorMode(name, 2)
 
 
 class DocumentStorage:
-    """SetupStorage backed by one App::FeaturePython object of the document.
-
-    The container object is created lazily on the first save, so merely
-    opening or analyzing a document never modifies it.
-    """
-
-    container_name = CONTAINER_NAME
-    property_name = PROPERTY_NAME
+    """Setup storage backed by the document's IndexedCAM container."""
 
     def __init__(self, document: Any) -> None:
         self._document = document
 
-    def _container(self) -> Any:
-        return self._document.getObject(self.container_name)
+    def _container(self) -> Optional[Any]:
+        from IndexedCAM.Core.orientation_jobs import find_container
+
+        return find_container(self._document)
 
     def load(self) -> List[Dict[str, Any]]:
         container = self._container()
-        if container is None or not hasattr(container, self.property_name):
+        if container is None or not hasattr(container, PROPERTY_NAME):
             return []
-        raw = getattr(container, self.property_name)
+        raw = getattr(container, PROPERTY_NAME)
         if not raw:
             return []
         data = json.loads(raw)
@@ -39,144 +70,27 @@ class DocumentStorage:
         return data
 
     def save(self, setups: Sequence[Mapping[str, Any]]) -> None:
-        container = self._container()
-        if container is None:
-            container = self._document.addObject("App::FeaturePython", self.container_name)
-            container.addProperty(
-                "App::PropertyString", self.property_name, "IndexedCAM", "Serialized data"
-            )
-            container.setEditorMode(self.property_name, 2)
-        setattr(container, self.property_name, json.dumps(list(setups)))
+        from IndexedCAM.Core.orientation_jobs import container
+
+        owner = container(self._document)
+        _string_property(owner, PROPERTY_NAME, "Serialized setups")
+        setattr(owner, PROPERTY_NAME, json.dumps(list(setups)))
 
 
-GROUP_NAME = "Orientations"
-GROUP_MARKER = "IndexedCAMOrientations"
-ORIENTATION_PREFIX = "IndexedCAM_Orientation"
-ORIENTATION_TYPE = "App::DocumentObjectGroupPython"
-ORIENTATION_DATA = "IndexedCAMData"
+class ProgramStepsStorage:
+    """Program order stored on the IndexedCAM container."""
 
-
-def orientations_group(job: Any) -> Any:
-    """The group of ``job`` that holds its orientations, or None."""
-    for child in getattr(job, "Group", ()):
-        if hasattr(child, GROUP_MARKER):
-            return child
-    return None
-
-
-def ensure_orientations_group(job: Any) -> Any:
-    group = orientations_group(job)
-    if group is None:
-        group = job.Document.addObject("App::DocumentObjectGroup", GROUP_NAME)
-        group.addProperty("App::PropertyBool", GROUP_MARKER, "IndexedCAM", "Orientations of a Job")
-        setattr(group, GROUP_MARKER, True)
-        group.Label = GROUP_NAME
-        job.addObject(group)
-        hide_group(group)
-    return group
-
-
-def hide_group(group: Any) -> None:
-    """Groups propagate their visibility to children when a file is reopened,
-    so the groups holding the (hidden) local models must be hidden too."""
-    group.Visibility = False
-    if getattr(group, "ViewObject", None) is not None:
-        group.ViewObject.Visibility = False
-
-
-def orientation_of(group: Any, setup_name: str) -> Any:
-    """The orientation object of ``setup_name`` inside ``group``, or None."""
-    for child in getattr(group, "Group", ()):
-        if hasattr(child, ORIENTATION_DATA) and json.loads(child.IndexedCAMData).get("name") == setup_name:
-            return child
-    return None
-
-
-class JobStorage:
-    """SetupStorage keeping each orientation as an object inside its CAM Job.
-
-    The Job gets an ``Orientations`` group (created on the first save) with one
-    child per orientation (itself a group holding the Setup's local model); the full data stays in a hidden JSON property and
-    B/C/Source are shown read-only. Children are reused by position, so a
-    rename or reorder never leaves stale objects.
-    """
-
-    def __init__(self, job: Any) -> None:
-        self._job = job
-
-    def _children(self) -> List[Any]:
-        group = orientations_group(self._job)
-        if group is None:
-            return []
-        return [o for o in group.Group if hasattr(o, ORIENTATION_DATA)]
+    def __init__(self, owner: Any) -> None:
+        self._owner = owner
 
     def load(self) -> List[Dict[str, Any]]:
-        return [json.loads(child.IndexedCAMData) for child in self._children()]
-
-    def save(self, setups: Sequence[Mapping[str, Any]]) -> None:
-        children = self._children()
-        if not setups and not children:
-            return
-        group = ensure_orientations_group(self._job)
-        document = self._job.Document
-        by_name = {json.loads(c.IndexedCAMData).get("name"): c for c in children}
-        # a child keeps its identity (and the local model it holds) by name; a
-        # renamed Setup takes over the child that is left without a match
-        matched = [by_name.get(data.get("name")) for data in setups]
-        spare = [c for c in children if all(c is not m for m in matched)]
-        for data, child in zip(setups, matched):
-            if child is None and spare:
-                child = spare.pop(0)
-            if child is None:
-                child = document.addObject(ORIENTATION_TYPE, ORIENTATION_PREFIX)
-                self._add_properties(child)
-                group.addObject(child)
-                hide_group(child)
-            self._fill(child, data)
-        for child in spare:
-            for nested in list(getattr(child, "Group", ())):
-                document.removeObject(nested.Name)
-            document.removeObject(child.Name)
-
-    @staticmethod
-    def _add_properties(child: Any) -> None:
-        child.addProperty("App::PropertyString", ORIENTATION_DATA, "IndexedCAM", "Serialized data")
-        child.setEditorMode(ORIENTATION_DATA, 2)
-        child.addProperty("App::PropertyFloat", "B", "IndexedCAM", "B angle (deg)")
-        child.addProperty("App::PropertyFloat", "C", "IndexedCAM", "C angle (deg)")
-        child.addProperty("App::PropertyString", "Source", "IndexedCAM", "Face it came from")
-        for name in ("B", "C", "Source"):
-            child.setEditorMode(name, 1)
-
-    @staticmethod
-    def _fill(child: Any, data: Mapping[str, Any]) -> None:
-        child.IndexedCAMData = json.dumps(dict(data))
-        child.Label = str(data.get("name", "Orientation"))
-        child.B = float(data.get("b", 0.0))
-        child.C = float(data.get("c", 0.0))
-        child.Source = str(data.get("metadata", {}).get("source", ""))
-
-
-class JobProgramStorage:
-    """Program steps stored on the ``Orientations`` group of the Job."""
-
-    def __init__(self, job: Any) -> None:
-        self._job = job
-
-    def load(self) -> List[Dict[str, Any]]:
-        group = orientations_group(self._job)
-        raw = getattr(group, PROGRAM_PROPERTY_NAME, "") if group is not None else ""
+        container = orientations_group(self._owner)
+        raw = getattr(container, PROGRAM_PROPERTY_NAME, "") if container is not None else ""
         return json.loads(raw) if raw else []
 
     def save(self, steps: Sequence[Mapping[str, Any]]) -> None:
-        group = orientations_group(self._job)
-        if group is None:
-            if not steps:
-                return
-            group = ensure_orientations_group(self._job)
-        if not hasattr(group, PROGRAM_PROPERTY_NAME):
-            group.addProperty(
-                "App::PropertyString", PROGRAM_PROPERTY_NAME, "IndexedCAM", "Program steps"
-            )
-            group.setEditorMode(PROGRAM_PROPERTY_NAME, 2)
-        setattr(group, PROGRAM_PROPERTY_NAME, json.dumps(list(steps)))
+        if not steps and orientations_group(self._owner) is None:
+            return
+        owner = ensure_orientations_group(self._owner)
+        _string_property(owner, PROGRAM_PROPERTY_NAME, "Program steps")
+        setattr(owner, PROGRAM_PROPERTY_NAME, json.dumps(list(steps)))

@@ -86,20 +86,20 @@ class MemorySafetyStorage:
         self._config = config
 
 
-class JobSafetyStorage:
-    """Safety config stored on the ``Orientations`` group of the Job.
+class DocumentSafetyStorage:
+    """Safety config stored on the IndexedCAM container of the document.
 
     A JSON string in a hidden property, so it travels inside the .FCStd without
     adding another object to the tree.
     """
 
-    def __init__(self, job: Any) -> None:
-        self._job = job
+    def __init__(self, owner: Any) -> None:
+        self._owner = owner
 
     def load(self) -> SafetyConfig:
         from IndexedCAM.Core.document_storage import orientations_group
 
-        group = orientations_group(self._job)
+        group = orientations_group(self._owner)
         raw = getattr(group, PROPERTY_NAME, "") if group is not None else ""
         if not raw:
             return SafetyConfig()
@@ -111,9 +111,9 @@ class JobSafetyStorage:
     def save(self, config: SafetyConfig) -> None:
         from IndexedCAM.Core.document_storage import ensure_orientations_group, orientations_group
 
-        group = orientations_group(self._job)
+        group = orientations_group(self._owner)
         if group is None:
-            group = ensure_orientations_group(self._job)
+            group = ensure_orientations_group(self._owner)
         if not hasattr(group, PROPERTY_NAME):
             group.addProperty(
                 "App::PropertyString", PROPERTY_NAME, "IndexedCAM", "Safety distance of the head"

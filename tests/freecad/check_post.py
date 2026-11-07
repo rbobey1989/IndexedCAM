@@ -1,10 +1,10 @@
 """FreeCAD end-to-end check of the LinuxCNC post processor.
 
-Creates a Job with two indexed orientations, posts the program and verifies the
+Creates two indexed orientations (one CAM Job each), posts the program and verifies the
 G-code has one tilted work plane per orientation, the head angles of each
 setup, the operation moves in the local frame and the retract before indexing.
-Run headless with the AppImage:
-    INDEXEDCAM_ROOT=<repo> INDEXEDCAM_LOG=<log> FreeCAD.AppImage tests/freecad/check_post.py
+Run with the AppImage (it needs a display):
+    INDEXEDCAM_ROOT=<repo> INDEXEDCAM_LOG=<log> xvfb-run -a FreeCAD.AppImage tests/freecad/check_post.py
 The last line of the log is PASS on success.
 """
 
@@ -101,13 +101,12 @@ try:
     contour.Base = [(clone, ["Face2"])]
     doc.recompute()
 
-    ctx = build_context(doc, job)
+    ctx = build_context(doc)
     manager, bridge, program = ctx.manager, ctx.bridge, ctx.program
 
     def make_setup(face, name, operations):
         Gui.Selection.clearSelection()
         Gui.Selection.addSelection(doc.Name, clone.Name, face)
-        Gui.Selection.addSelection(doc.Name, job.Name)
         workflow = face_orientation.FaceOrientationWorkflow(
             FaceOrientationService(),
             manager,
@@ -164,12 +163,12 @@ try:
     check(not [line for line in text.splitlines() if line.startswith("G1") and "F0" in line],
           "ningun G1 con F0")
 
-    from IndexedCAM.Core.safety import JobSafetyStorage, SafetyConfig
+    from IndexedCAM.Core.safety import DocumentSafetyStorage, SafetyConfig
 
-    stored = JobSafetyStorage(job)
+    stored = DocumentSafetyStorage(doc)
     check(stored.load() == SafetyConfig(), "sin configurar, la distancia de seguridad es la minima")
     stored.save(SafetyConfig(30.0))
-    check(stored.load() == SafetyConfig(30.0), "la distancia de seguridad se guarda en el Job")
+    check(stored.load() == SafetyConfig(30.0), "la distancia de seguridad se guarda en el documento")
     short = build_post(doc, manager, program, bridge, "PostCheck", SafetyConfig())
     padded = build_post(doc, manager, program, bridge, "PostCheck", SafetyConfig(30.0))
     check(all(p.safe_z < q.safe_z for p, q in zip(short.orientations, padded.orientations)),
@@ -181,17 +180,17 @@ try:
           "el margen se suma tal cual a la altura de retirada")
     stored.save(SafetyConfig())
 
-    from IndexedCAM.Core.post_settings import JobPostStorage, PostSettings
+    from IndexedCAM.Core.post_settings import DocumentPostStorage, PostSettings
     from IndexedCAM.Post.linuxcnc import AxisSigns as PostSigns
 
-    post_storage = JobPostStorage(job)
+    post_storage = DocumentPostStorage(doc)
     check(post_storage.load() == PostSettings(), "las opciones del post empiezan por defecto")
     chosen = PostSettings(
         LinuxCNCConfig(signs=PostSigns(b_sign=-1.0, c_zero=90.0), line_numbers=True),
         "PostCheck",
     )
     post_storage.save(chosen)
-    check(post_storage.load() == chosen, "las opciones del post se guardan en el Job")
+    check(post_storage.load() == chosen, "las opciones del post se guardan en el documento")
     flipped = LinuxCNCPost().render(posted, post_storage.load().config)
     check("G0 B-90.000 C-90.000 (indexado)" in flipped,
           "el sentido configurado llega al G-code")
@@ -238,8 +237,8 @@ try:
         write_program(text, example)
         log("ejemplo escrito en", example)
 
-    Gui.getMainWindow().close()
     log("PASS")
+    Gui.getMainWindow().close()
 except Exception:
     log(traceback.format_exc())
     log("FAIL")

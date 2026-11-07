@@ -16,35 +16,71 @@ Marcados como *probado* (ejecutado en el AppImage) o *código* (leído en `Mod/C
 | `PostProcessorFactory` busca `<nombre>_post.py` en las rutas de post y en `sys.path`, y usa la clase `<Nombre>` (`postname.title()`). El directorio del addon ya está en `sys.path`, así que `indexedcam_post.py` en la raíz es descubrible. | probado + código |
 | Las operaciones se crean por API: `Path.Op.<Tipo>.Create(nombre, parentJob=job)` y se asignan caras con `op.Base = [(objeto, ['FaceN'])]`. | probado |
 | Cada operación expone `op.Path.Commands` tras `recompute()`; el `Job` expone `Operations.Group` y `ToolController`. | probado |
+| Las operaciones de área (Adaptive, 3D Surface, Waterline) leen **siempre** `Job.Model` y `Job.Stock`: `Area.areaOpShapeForDepths` devuelve `job.Stock.Shape`, `Base.__init__` hace `self.stock = parentJob.Stock` y `SurfaceSupport._identifyFacesAndVoids` solo reconoce caras de objetos que estén en `Job.Model.Group` (`mdlIdx = None` en otro caso). | código |
+| Por eso un único Job no puede mecanizar una cara inclinada con OCL: la geometría local y el bruto del Job están en marcos distintos. Medido en `Test000.FCStd`: `Surface` daba 215 comandos entre X 2,5..7 y **Z −1,7..+5**; el mismo op en un Job cuyo modelo es el clon local da 305 comandos sobre la cara, con Z ≈ 0 y profundidad −1,4. | probado |
+| `Path.Main.Job.Create(nombre, [modelo])` **clona** el modelo (`Draft.clone` → objeto «Model-Clone») y `Stock.CreateFromBase(job)` deriva el bruto de ese clon. | probado |
+| `Draft.clone` copia la forma en el momento de crearlo: el modelo local debe estar ya recalculado (`recompute`) antes de crear el Job. | probado |
+| `Job.Tools.addObject(tc)` **quita** el controlador del Job anterior (`InList` pasa al nuevo `Tools`): las tablas de herramientas no se comparten. `Job.Proxy.addOperation`/`addToolController` son la API pública para mover operaciones. | probado |
+| `Face.normalAt()` devuelve la normal en el marco propio de la forma, **sin** su `Placement`, mientras que `CenterOfMass`/`BoundBox` sí lo incluyen; con una pieza con `Placement` hay que rotar la normal a mano. | probado |
 
-## Decisión: el Job lo crea el usuario en CAM; IndexedCAM añade orientaciones dentro de él
+## Decisión (revisada): un Job de CAM por orientación
 
-El usuario crea el Job y sus operaciones con el banco CAM nativo. IndexedCAM no crea Jobs ni operaciones: añade al Job un grupo de orientaciones y orienta las operaciones que el usuario elija. Con varios Jobs en el documento, las orientaciones pertenecen al Job relacionado con la selección (o al que se elija en un diálogo).
+Las operaciones 2.5D se conforman con la `Base` de la operación, pero las de
+área (Adaptive, 3D Surface, Waterline) **no**: leen `Job.Model` y `Job.Stock`
+(tabla de hechos, arriba). Un único Job cuyo modelo es la pieza no puede
+mecanizar una cara inclinada, porque el CAM seguiría calculando con la
+herramienta en el +Z de la **pieza**. Por eso cada Setup tiene su propio Job,
+con el modelo ya colocado en el marco del Setup y un bruto derivado de él:
 
 ```
-Job CAM del usuario
-├─ Orientations (grupo de IndexedCAM en job.Group): una orientación por Setup
-├─ Modelo (Job.Model): clon local por Setup (Placement = marco del Setup⁻¹)
-│    LocalA (Setup "Cara A")   LocalB (Setup "Cara B")   …
-└─ Operaciones CAM estándar (UI nativa), cada una con Base = cara de SU clon
-     OpA → Setup "Cara A"      OpB → Setup "Cara B"
+Documento
+└─ IndexedCAM (contenedor oculto, App::DocumentObjectGroup)
+   ├─ IndexedCAM_Local_<setup>   modelo local (Shape transitorio)
+   ├─ IndexedCAM_Job_<setup>     Job CAM: Model = clon del modelo local,
+   │                             Stock = caja del clon; Operations = las del Setup
+   ├─ …un par por orientación…
+   └─ propiedades JSON: SetupsJson, StepsJson, IndexedCAMPOST, IndexedCAMSafety
 ```
 
-Verificado en FreeCAD 1.1.4 (dos clones en un mismo Job con `job.Model.addObject(clone)`; una `MillFace` por clon):
+Reglas derivadas (todas verificadas en 1.1.4):
 
-- Cada operación genera la trayectoria en el marco local de su clon (OpB: Z=60 constante sobre la cara inclinada).
-- **Problema:** el bruto del Job es único y abarca la unión de los clones. Con los valores por defecto, OpA arranca en Z=61 hasta 30 (384 comandos) en lugar de cortar solo la cara.
-- **Solución verificada:** IndexedCAM enlaza por operación `StartDepth`, `SafeHeight` y `ClearanceHeight` al punto más alto de su clon mediante **expresiones** (`<clon>.Shape.BoundBox.ZMax * 1 mm + offset`). `FinalDepth` lo sigue calculando CAM desde la cara. Con expresiones las alturas se actualizan solas al editar el modelo original (con valores fijos quedaban obsoletas y CAM emitía avisos "shape is not planar").
+- `OrientationJobs` (`Core/orientation_jobs.py`) crea y mantiene los Jobs: modelo
+  local → `recompute` → `Path.Main.Job.Create` → `Stock.CreateFromBase` →
+  etiqueta `"<setup> B… C…"` → propiedad `IndexedCAMSetup` con el Setup en JSON
+  (el Job es autodescriptivo y así se encuentra por nombre).
+- Al asociar una operación (`CamBridge.bind_operation`) se **mueve** al Job de la
+  orientación (`Operations.removeObject` + `Job.Proxy.addOperation`), se
+  reapunta su `Base` a las **mismas caras** del modelo del Job (los nombres
+  `FaceN` se conservan) y se le da su propio controlador de herramienta:
+  `Tools.addObject` expulsaría el controlador del Job de origen y ese Job se
+  quedaría sin herramienta para crear más operaciones.
+- `FinalDepth` es una Z local: al mover la operación se reajusta conservando la
+  **profundidad bajo la cara** (`final - (start_viejo - top_nuevo)`), que es lo
+  que pidió el usuario. `StartDepth`, `SafeHeight` y `ClearanceHeight` se ligan
+  por expresión al `Shape.BoundBox.ZMax` del modelo del Job.
+- Las alturas y el bruto salen del modelo del propio Job: la cara mecanizada
+  queda en **Z local = 0** en todas las orientaciones.
+- `Placement` de la operación = inversa del marco del Setup: se sigue dibujando
+  la trayectoria sobre la cara que mecaniza. `Path.Commands` permanece en el
+  marco local (lo que usan programa, preview y post).
+- El contenedor sustituye al antiguo grupo `Orientations` dentro del Job del
+  usuario; los ajustes (`Core/document_storage.py`, `post_settings.py`,
+  `safety.py`) viajan en el mismo objeto, así que el `.FCStd` no gana objetos
+  visibles.
 
-Reglas derivadas:
+### Por qué cambió (historial)
 
-- Toda operación debe llevar `Base` explícito (cara del clon de su Setup); una operación sin Base usaría todos los clones superpuestos.
-- Cada orientación es un grupo (`App::DocumentObjectGroupPython`) que contiene su modelo local: en el árbol se ve una sola entrada por orientación con el modelo dentro. Al reabrir un `.FCStd` FreeCAD volvía a mostrar los modelos locales; `Gui/restore_observer.py` (instalado en `InitGui.py`) los mantiene ocultos durante la restauración. Al renombrar, la orientación conserva su modelo (`JobStorage` empareja por nombre).
-- Los modelos locales viven dentro del grupo `Orientations`, **no** en `Job.Model`: `StockFromBase` calcula el bruto con la caja envolvente de `Job.Model.Group` y, con copias giradas dentro, el bruto crecía (visto en un archivo real: 109×64×94 mm para una pieza de 60×40×30) y falseaba `FinalDepth`.
-- CAM dibuja toda trayectoria en el marco del Job (herramienta +Z), lejos de la pieza y del bruto. Al asociar una operación se fija su `Placement` a la inversa del marco local del Setup: la trayectoria se ve sobre la cara que mecaniza y con la herramienta apuntando según B/C. `Path.Commands` sigue en el marco local (lo que usan el programa, la previsualización y el post). Los post nativos que aplican `getPathWithPlacement` verían coordenadas de pieza; el post de IndexedCAM (#19) usará `Path.Commands`.
-- Una operación sin `Base` mecanizaría todo el modelo; al asociarla se le asigna la cara con la que se creó la orientación.
-- El marco del Setup está en coordenadas de documento, así que `LocalModel` conserva el `Placement` de su fuente (el clon del Job suele estar desplazado); antes la cara quedaba en Z=-1 en lugar de Z=0.
-- Los clones se ocultan en la vista; el modelo original sigue siendo el visible.
+La primera versión añadía las orientaciones **dentro** del Job del usuario: un
+clon local por Setup en un grupo aparte y las operaciones con `Base` en ese
+clon, con alturas por expresión. Funcionaba para 2.5D (`MillFace`, `Pocket`,
+`Profile`, `Adaptive` en caras horizontales), pero con `3D Surface` sobre una
+cara inclinada la trayectoria salía desplazada y con Z positiva: CAM mezclaba
+el `Job.Stock` (coordenadas de pieza) con la geometría local del `Base`, y
+`SurfaceSupport` ni siquiera encontraba las caras (`mdlIdx = None`). El cálculo
+se hacía, además, contra el modelo del Job —la pieza sin girar—, así que el
+resultado no podía ser correcto. La alternativa «un Job por Setup» que se había
+descartado por «multiplicar Jobs» es la única que mantiene un solo marco para
+modelo, bruto y operaciones.
 
 ### Clones ligeros (`LocalModel`)
 
@@ -64,29 +100,28 @@ Diseño adoptado:
 - `Shape` se marca `Transient`: **no se guarda en el archivo**. Al cargar, `onDocumentRestored` reconstruye la forma directamente (un `touch()` no basta: el clon quedaba con forma nula).
 - Memoria: una única geometría compartida por todos los clones; solo cambia la ubicación.
 - Los clones dependen de `Source`, así que siguen los cambios paramétricos del modelo sin sincronización manual (resuelve el riesgo abierto de sincronización).
-- Verificado: dos clones en un Job, una `MillFace` por clon con alturas propias → OpA (cara +X) Z=60, OpB (cara +Y) Z=40; guardar, reabrir y recalcular restaura clones y trayectorias.
+- Verificado: cada modelo local se puede usar como `Model` de un Job (CAM lo clona) con la cara del Setup en Z=0; guardar, reabrir y recalcular restaura modelos, Jobs y operaciones.
 
 Descartado: `App::Link` como modelo (el Job lo acepta pero crea su propio clon interno, sin ahorro) y clones con `Shape` persistente (archivo proporcional al número de Setups).
 
 Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente la cara del Setup) para operaciones 2.5D en piezas muy pesadas; las operaciones 3D requieren el modelo completo.
-- La relación operación → Setup se guarda en `IndexedSetup.operations`, en la propiedad `IndexedSetup` de la operación y en el programa.
+- La relación operación → Setup la da el Job que la contiene (`OrientationJobs.setup_of_operation`); `IndexedSetup.operations` y el programa se sincronizan desde ahí.
 - El orden de salida lo define el programa de IndexedCAM, no `Job.Fixtures` ni `OrderOutputBy`.
-- Alternativa descartada: un Job por Setup (multiplica Jobs, herramientas y hojas de configuración). También se descartan varios `Fixtures` (repiten todas las operaciones) y parchear operaciones CAM.
 - Verificado: `Adaptive` y `Pocket` funcionan sobre el clon local; al editar el modelo original el clon se actualiza solo; 4 clones de una pieza de 150 caras recalculan en ~1 s. Los dressups (Boundary, Tags…) no se han probado todavía.
 
 ### Hallazgos de la implementación (#12, #13)
 
-- La `Base` de una operación nativa apunta al clon propio del Job (`Model-<pieza>`), no a la pieza original; los nombres de cara (`FaceN`) coinciden, así que al asociarla se reasigna a las mismas caras del clon local del Setup.
-- Una operación o un Setup pueden borrarse en CAM en cualquier momento, por eso `IndexedSetup.operations` y el programa se sincronizan desde el Job (propiedad `IndexedSetup` de cada operación).
-- Un grupo añadido a `job.Group` persiste y guarda propiedades, pero el árbol nativo del Job solo reclama Operations, Model, Stock, SetupSheet y Tools (y `claimChildren` no se invoca desde fuera): el grupo `Orientations` aparece **junto al Job** en el árbol, no anidado.
+- La `Base` de una operación nativa apunta al clon propio del Job (`Model-<pieza>`), no a la pieza original; los nombres de cara (`FaceN`) coinciden, así que al asociarla se reasigna a las mismas caras del modelo del Job de la orientación.
+- Una operación o un Setup pueden borrarse en CAM en cualquier momento, por eso `IndexedSetup.operations` y el programa se sincronizan desde los Jobs (`bound_steps`).
+- El contenedor `IndexedCAM` es un objeto aparte en el árbol: no aparece dentro de ningún Job y se mantiene oculto (`Gui/restore_observer.py`).
 - La cara del Setup queda en Z=0 local y el centro de la cara en el origen XY del WCS.
-- Limitación: se asume un objeto de primer nivel (no dentro de un Body/Part con Placement propio).
+- Limitación corregida: hasta ahora se ignoraba el `Placement` de la pieza al leer la normal de la cara y una pieza desplazada/girada daba B/C erróneos; `FaceAnalyzer.analyze(face, rotation)` aplica ahora la rotación del objeto.
 
 ## Flujo de usuario
 
-1. En el banco **CAM**: crear el Job con la pieza y sus operaciones (con su herramienta).
-2. En **IndexedCAM**: seleccionar una cara → **Face Orientation**. Se calcula B/C, se muestra la triada, se pide el nombre y la orientación se guarda dentro del Job (grupo `Orientations`).
-3. En el mismo comando se marcan las operaciones del Job que se realizarán orientadas a ella (opcional; **Assign Operation** lo permite después). Cada operación pasa a la cara equivalente del clon local del Setup y sus alturas se ligan a él.
+1. En el banco **CAM**: crear las operaciones como siempre (con su herramienta), en cualquier Job. También vale crearlas ya dentro del Job de la orientación.
+2. En **IndexedCAM**: seleccionar una cara → **Face Orientation**. Se calcula B/C, se muestra la triada, se pide el nombre y se crea el **Job de la orientación** con su modelo local y su bruto.
+3. En el mismo comando se marcan las operaciones que se harán orientadas a ella (opcional; **Assign Operation** lo permite después). Cada operación se mueve a ese Job, apunta a las mismas caras de su modelo y hereda sus alturas.
 4. El programa es una lista ordenada de pasos `(Setup, Operación)`; cada paso continúa desde el punto final del anterior y el primero parte de la posición segura inicial.
 5. Entre dos pasos de distinto Setup se inserta una **transición** (retirada → giro B/C → aproximación) validada sin colisiones.
 6. En todo momento se muestra la **orientación de la herramienta** y los movimientos (ver Visualización).
@@ -129,7 +164,8 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 | `Core/program.py` | Secuencia ordenada de pasos y punto final de cada uno | no |
 | `Core/local_placement.py` | Transformación parte → marco local y alturas por operación | no |
 | `Core/local_model.py` | Clon ligero `LocalModel` por Setup | sí |
-| `Core/cam_bridge.py` | Job existente (`CamBridge(job)`), `attach_setup`, `bind_operation`, `refresh_all`, `detach_setup` | sí |
+| `Core/orientation_jobs.py` | Contenedor del documento y un Job CAM por orientación (`create`, `update`, `rename`, `remove`, `bound_steps`) | sí |
+| `Core/cam_bridge.py` | Fachada de los Jobs: `attach_setup`, `bind_operation`, `refresh_operation`, `refresh_all`, `detach_setup`, `stocks` | sí |
 | `Core/transition_planner.py` | Retirada, giro sobre esfera, aproximación, alternativas | no |
 | `Core/collision_checker.py` | Interfaz + implementación con `Part` | sí (implementación) |
 | `Machine/envelope.py` | Herramienta, portaherramientas, cabezal, pivote | no |
@@ -150,7 +186,7 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 
 ## Comprobador de colisiones (#17)
 
-`PartCollisionChecker(envelope, obstacles, margen=2 mm)` (`Core/collision_checker.py`). Obstáculos en coordenadas de pieza: la pieza y el bruto (*cortables*) y el utillaje. `checker_for_operation(bridge, pieza, operación, envolvente_base, bruto=None, utillaje=())` lo construye con la herramienta real de la operación. El bruto del Job **no** se usa: con un modelo local por Setup su caja abarca todos los clones rotados, no el bruto real; si se necesita, se pasa explícitamente. Dos modos:
+`PartCollisionChecker(envelope, obstacles, margen=2 mm)` (`Core/collision_checker.py`). Obstáculos en coordenadas de pieza: la pieza y el bruto (*cortables*) y el utillaje. `checker_for_operation(bridge, pieza, operación, envolvente_base, bruto=None, utillaje=())` lo construye con la herramienta real de la operación. El bruto no se toma de los Jobs: cada uno está en el marco de su orientación; si se necesita, se pasa explícitamente en coordenadas de pieza. Dos modos:
 
 - `collision(punta, B, C)`: tránsito; todos los cilindros contra todos los obstáculos.
 - `cutting_collision(...)`: mecanizado; solo la parte cortante (`CuttingEdgeHeight`) puede tocar lo cortable. El vástago (resto de la herramienta, con `ShankDiameter`), el portaherramientas y el cabezal no, y el utillaje se comprueba contra todo.
@@ -164,8 +200,8 @@ Verificado con `tests/freecad/check_collision.py` y `check_assign_operation.py`.
 ## Preview: herramienta por operación y stock tallado
 
 - Cada clip usa la herramienta del `ToolController` de **su** operación (radio, largo y longitud de corte); la lista y el estado del Preview muestran su nombre y dimensiones. La transición usa la herramienta de la operación a la que lleva (no se modela el cambio de herramienta).
-- El stock sale de `Job.Stock` y se voxeliza (`Core/voxel_stock.py`, `numpy`): máx. ~800 000 celdas (resolución ≈ 0,5 mm en una pieza de 60×40×30; menor si el bruto es grande). Si el bruto no es una caja, se enmascara con `isInside` con un máximo de 150 000 celdas.
+- El bruto del programa es la caja de la pieza en coordenadas de pieza, 1 mm por lado (`stock_for_program`), y se voxeliza (`Core/voxel_stock.py`, `numpy`): máx. ~800 000 celdas (resolución ≈ 0,5 mm en una pieza de 60×40×30).
 - `Core/stock_timeline.py` talla el stock con el eje real (B/C) y el cilindro de corte de cada operación; las transiciones no cortan. Guarda instantáneas al inicio de cada clip, así que el slider puede ir adelante y atrás. Durante la reproducción la malla se reconstruye unas 6 veces por segundo.
 - La vista 3D dibuja la forma real de la herramienta (malla de `ToolBit.Shape`, cacheada por herramienta) de cada operación; si no hay malla se usan cilindros. El portaherramientas y el cabezal siguen siendo cilindros.
-- El Preview oculta `Job.Stock` mientras está abierto y lo restaura al cerrar. La casilla «Mostrar stock» lo activa o desactiva.
-- Límites: la fresa se modela como cilindro (sin esférica/cónica); la malla es en bloques; los G0 también tallan (si atraviesan material se verá); `Job.Stock` no se actualiza.
+- El Preview oculta el bruto de los Jobs de orientación mientras está abierto y lo restaura al cerrar. La casilla «Mostrar stock» lo activa o desactiva.
+- Límites: la fresa se modela como cilindro (sin esférica/cónica); la malla es en bloques; los G0 también tallan (si atraviesan material se verá); el bruto de CAM no se modifica.

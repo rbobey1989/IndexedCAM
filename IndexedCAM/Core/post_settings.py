@@ -98,16 +98,16 @@ class MemoryPostStorage:
         self._settings = settings
 
 
-class JobPostStorage:
-    """Post settings stored on the ``Orientations`` group of the Job."""
+class DocumentPostStorage:
+    """Post settings stored on the IndexedCAM container of the document."""
 
-    def __init__(self, job: Any) -> None:
-        self._job = job
+    def __init__(self, owner: Any) -> None:
+        self._owner = owner
 
     def load(self) -> PostSettings:
         from IndexedCAM.Core.document_storage import orientations_group
 
-        group = orientations_group(self._job)
+        group = orientations_group(self._owner)
         raw = getattr(group, PROPERTY_NAME, "") if group is not None else ""
         if not raw:
             return PostSettings()
@@ -119,9 +119,9 @@ class JobPostStorage:
     def save(self, settings: PostSettings) -> None:
         from IndexedCAM.Core.document_storage import ensure_orientations_group, orientations_group
 
-        group = orientations_group(self._job)
+        group = orientations_group(self._owner)
         if group is None:
-            group = ensure_orientations_group(self._job)
+            group = ensure_orientations_group(self._owner)
         if not hasattr(group, PROPERTY_NAME):
             group.addProperty(
                 "App::PropertyString", PROPERTY_NAME, "IndexedCAM", "Post processor options"

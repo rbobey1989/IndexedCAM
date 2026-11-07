@@ -12,10 +12,13 @@ Workbench para FreeCAD orientado al mecanizado indexado 3+2.
 
 ## Estado
 
-El flujo completo funciona sobre el Job nativo de CAM: orientaciones indexadas
-dentro del Job, operaciones asociadas a cada orientación, programa, Preview con
-stock y colisiones, distancia de seguridad configurable, y postprocesador
-LinuxCNC (planos `G68.2` + `5axiskins`) con ventana de opciones por máquina.
+Cada orientación indexada tiene su propio **Job de CAM** con el modelo y el
+bruto ya colocados en su marco (la cara mecanizada en Z=0), así que funcionan
+tanto las operaciones 2.5D como las de área del CAM (Adaptive, 3D Surface,
+Waterline). Sobre eso: operaciones asociadas a cada orientación, programa,
+Preview con stock tallado y colisiones, distancia de seguridad configurable y
+postprocesador LinuxCNC (planos `G68.2` + `5axiskins`) con ventana de opciones
+por máquina.
 
 Consulta [docs/ROADMAP.md](docs/ROADMAP.md) para las fases de desarrollo,
 [docs/TESTING.md](docs/TESTING.md) para instalar y probar el addon en FreeCAD y

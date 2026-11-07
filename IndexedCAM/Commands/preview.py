@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 from IndexedCAM.Core.collision_checker import checker_for_operation
-from IndexedCAM.Core.operation_assignment import parse_source
+from IndexedCAM.Core.operation_assignment import parse_source, source_box
 from IndexedCAM.Core.path_endpoints import path_points
 from IndexedCAM.Core.preview import Clip, Playlist, PreviewBuilder, describe_tool, sphere_for
 from IndexedCAM.Core.transition_planner import TransitionPlanner
@@ -84,12 +84,12 @@ def build_clips(
     program: Any,
     bridge: Any,
     machine: Optional[BCMachine] = None,
-    job: Any = None,
+    owner: Any = None,
 ) -> List[Clip]:
     from IndexedCAM.Commands.program import resolve_program
-    from IndexedCAM.Core.safety import JobSafetyStorage, SafetyConfig
+    from IndexedCAM.Core.safety import DocumentSafetyStorage, SafetyConfig
 
-    safety = JobSafetyStorage(job).load() if job is not None else SafetyConfig()
+    safety = DocumentSafetyStorage(owner).load() if owner is not None else SafetyConfig()
     if machine is None:
         machine = BCMachine()
         machine = BCMachine(envelope=machine.envelope.with_accessories(safety.holder, safety.head))
@@ -100,13 +100,7 @@ def build_clips(
     resources = DocumentResources(
         document, bridge, machine.envelope, {i.step.operation: i.step.setup for i in items}, setups
     )
-    first = setups[items[0].step.setup]
-    source = document.getObject(parse_source(first.metadata["source"]).object_name)
-    box = source.Shape.BoundBox
-    margin = safety.margin
-    sphere = sphere_for(
-        ((box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)), margin
-    )
+    sphere = sphere_for(source_box(document, setups[items[0].step.setup]), safety.margin)
     # a transition is validated with the tool of the step it leads to
     return PreviewBuilder(
         setups,
@@ -117,29 +111,29 @@ def build_clips(
 
 
 STOCK_MAX_CELLS = 800_000
-NON_BOX_MAX_CELLS = 150_000
+STOCK_ALLOWANCE = 1.0
 REFRESH_SECONDS = 0.15
 
 
-def stock_for_job(job: Any) -> Any:
-    """Voxel model of the Job's stock (None if the Job has no usable stock)."""
+def stock_for_program(document: Any, bridge: Any, allowance: float = STOCK_ALLOWANCE) -> Any:
+    """Voxel stock of the whole program: the box around the machined part.
+
+    The stock is in part coordinates because that is what the preview carves
+    (each clip converts its local path through its Setup's frame). It is grown
+    by ``allowance`` so the material the tool takes off the faces is visible.
+    """
     from IndexedCAM.Core.voxel_stock import VoxelStock
 
-    shape = getattr(getattr(job, "Stock", None), "Shape", None)
-    if shape is None or shape.isNull():
+    setups = bridge.jobs.setups()
+    corners = source_box(document, setups[0]) if setups else None
+    if corners is None:
         return None
-    box = shape.BoundBox
-    low, high = (box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)
-    is_box = abs(shape.Volume - box.XLength * box.YLength * box.ZLength) < 1e-3 * shape.Volume
-    inside = None
-    cells = STOCK_MAX_CELLS
-    if not is_box:
-        import FreeCAD
-
-        cells = NON_BOX_MAX_CELLS
-        inside = lambda centres: [shape.isInside(FreeCAD.Vector(*c), 1e-6, True) for c in centres]
-    resolution = (box.XLength * box.YLength * box.ZLength / cells) ** (1 / 3)
-    return VoxelStock(low, high, resolution, cells, inside)
+    low = tuple(value - allowance for value in corners[0])
+    high = tuple(value + allowance for value in corners[1])
+    resolution = (
+        (high[0] - low[0]) * (high[1] - low[1]) * (high[2] - low[2]) / STOCK_MAX_CELLS
+    ) ** (1 / 3)
+    return VoxelStock(low, high, resolution, STOCK_MAX_CELLS, None)
 
 
 class PreviewCommand:
@@ -166,16 +160,13 @@ class PreviewCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
-        from IndexedCAM.Commands.context import open_context, selected_objects
-        from IndexedCAM.Core.job_context import JobCancelled
+        from IndexedCAM.Commands.context import build_context
 
         document = FreeCAD.ActiveDocument
         try:
-            ctx = open_context(document, selected_objects())
-            clips = build_clips(document, ctx.manager, ctx.program, ctx.bridge, job=ctx.job)
-            stock = stock_for_job(ctx.job) if clips else None
-        except JobCancelled:
-            return
+            ctx = build_context(document)
+            clips = build_clips(document, ctx.manager, ctx.program, ctx.bridge, owner=document)
+            stock = stock_for_program(document, ctx.bridge) if clips else None
         except (ValueError, KeyError) as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return
@@ -186,7 +177,7 @@ class PreviewCommand:
             return
         if PreviewCommand._window is not None:
             PreviewCommand._window.close()
-        PreviewCommand._window = PreviewWindow(clips, stock, ctx.job)
+        PreviewCommand._window = PreviewWindow(clips, stock, ctx.bridge.stocks())
         PreviewCommand._window.show()
 
 
@@ -198,7 +189,7 @@ class PreviewWindow:
     transitions and the final return to vertical) is one continuous movement.
     """
 
-    def __init__(self, clips: Sequence[Clip], stock: Any = None, job: Any = None) -> None:
+    def __init__(self, clips: Sequence[Clip], stock: Any = None, stocks: Sequence[Any] = ()) -> None:
         import FreeCADGui as Gui
         from PySide import QtCore, QtWidgets
 
@@ -207,8 +198,8 @@ class PreviewWindow:
         self._clips = list(clips)
         self._view = ToolView()
         self._timeline = None
-        self._job = job
-        self._job_stock_visible = None
+        self._stocks = list(stocks)
+        self._stocks_visible: Dict[Any, bool] = {}
         self._last_refresh = 0.0
         self._playlist = Playlist.of(self._clips)
         self._clip_index: Optional[int] = None
@@ -266,7 +257,7 @@ class PreviewWindow:
         self._list.setCurrentRow(0)
 
     def show(self) -> None:
-        self._hide_job_stock()
+        self._hide_stocks()
         self._dialog.show()
         self._show(self._slider.value(), force=True)
 
@@ -323,18 +314,23 @@ class PreviewWindow:
 
     # --- drawing --------------------------------------------------------
 
-    def _hide_job_stock(self) -> None:
-        view = getattr(getattr(self._job, "Stock", None), "ViewObject", None)
+    def _hide_stocks(self) -> None:
+        for stock in self._stocks:
+            self._hide_stock(stock)
+
+    def _hide_stock(self, stock: Any) -> None:
+        view = getattr(stock, "ViewObject", None)
         if view is not None and self._timeline is not None:
-            self._job_stock_visible = view.Visibility
+            self._stocks_visible[stock.Name] = view.Visibility
             view.Visibility = False
 
     def _closed(self) -> None:
         self._timer.stop()
         self._view.clear()
-        view = getattr(getattr(self._job, "Stock", None), "ViewObject", None)
-        if view is not None and self._job_stock_visible is not None:
-            view.Visibility = self._job_stock_visible
+        for stock in self._stocks:
+            view = getattr(stock, "ViewObject", None)
+            if view is not None and stock.Name in self._stocks_visible:
+                view.Visibility = self._stocks_visible[stock.Name]
 
     def _update_stock(self, clip_index: int, index: int, force: bool) -> None:
         import time
