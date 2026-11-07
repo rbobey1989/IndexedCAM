@@ -7,6 +7,7 @@ for those B/C angles.
 """
 
 import configparser
+import math
 import os
 import re
 import shutil
@@ -381,3 +382,63 @@ def test_joint_position_matches_the_measured_machine():
     assert joint_position((30.0, 40.0, 15.0), 90.0, 90.0) == pytest.approx((30.0, -210.0, -235.0))
     assert joint_position((60.0, 40.0, 30.0), 45.0, 45.0) == pytest.approx((-65.0, -85.0, -43.223), abs=1e-3)
     assert joint_position((30.0, 20.0, 130.0), 0.0, 0.0) == pytest.approx((30.0, 20.0, 130.0))
+
+
+# --- orden de las rotativas en el visor 3D de Axis --------------------------
+
+
+def preview_axis(geometry, b, c):
+    """Eje de la herramienta que dibuja el visor 3D de Axis.
+
+    Replica ``ToolPart._apply_rotary`` de ``rs274/glcanon_scene.py``: recorre
+    ``[DISPLAY]GEOMETRY`` y llama a ``glRotate`` en ese orden, que se
+    post-multiplica (``M = R1·R2``), asi que sobre los vertices actua primero
+    la ultima letra.
+    """
+    axis = [0.0, 0.0, 1.0]
+
+    def about(vector, angle, axis_index):
+        rad = math.radians(angle)
+        cos, sin = math.cos(rad), math.sin(rad)
+        x, y, z = vector
+        if axis_index == 0:
+            return [x, cos * y - sin * z, sin * y + cos * z]
+        if axis_index == 1:
+            return [cos * x + sin * z, y, -sin * x + cos * z]
+        return [cos * x - sin * y, sin * x + cos * y, z]
+
+    for letter in reversed(geometry):
+        if letter == "B":
+            axis = about(axis, b, 1)
+        elif letter == "C":
+            axis = about(axis, c, 2)
+    return tuple(axis)
+
+
+@pytest.mark.parametrize(
+    "b, c, normal",
+    (
+        (0.0, 0.0, (0.0, 0.0, 1.0)),
+        (90.0, 0.0, (1.0, 0.0, 0.0)),
+        (90.0, 90.0, (0.0, 1.0, 0.0)),
+        (90.0, -90.0, (0.0, -1.0, 0.0)),
+    ),
+)
+def test_the_preview_geometry_order_draws_the_tool_normal(b, c, normal):
+    """Con la cadena de GEOMETRY del INI, el visor 3D apunta a la normal."""
+    geometry = ini()["DISPLAY"]["GEOMETRY"]
+    rotaries = "".join(ch for ch in geometry if ch in "ABC")
+    assert rotaries == "CB", (
+        "GEOMETRY debe listar C antes que B para reproducir Rz(C)@Ry(B): "
+        + geometry
+    )
+    for actual, expected in zip(preview_axis(rotaries, b, c), normal):
+        assert actual == pytest.approx(expected, abs=1e-9)
+
+
+def test_the_wrong_order_is_what_loses_the_c_rotation():
+    """Con 'BC' la C no cambia la orientacion: era el sintoma reportado."""
+    assert preview_axis("BC", 90.0, 90.0) == pytest.approx((1.0, 0.0, 0.0), abs=1e-9)
+    assert preview_axis("BC", 90.0, -90.0) == pytest.approx((1.0, 0.0, 0.0), abs=1e-9)
+    assert preview_axis("CB", 90.0, 90.0) == pytest.approx((0.0, 1.0, 0.0), abs=1e-9)
+    assert preview_axis("CB", 90.0, -90.0) == pytest.approx((0.0, -1.0, 0.0), abs=1e-9)

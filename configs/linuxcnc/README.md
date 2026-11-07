@@ -19,6 +19,12 @@ Se carga solo `validate_bc.ngc`: pulsa **Cycle Start** (o F9) para verlo.
 Máquina arriba la primera vez: **Enable** (reset de emergencia), **Machine On**
 y **Home All**.
 
+Ojo con `[DISPLAY] GEOMETRY = XYZCBW`: el visor 3D de Axis aplica las rotativas
+en el orden de esa cadena, así que **la C tiene que ir antes que la B** para que
+el dibujo coincida con `R = Rz(C)·Ry(B)`. Si se pone `XYZBC`, la vista previa
+enseña la herramienta horizontal y siempre mirando al mismo lado en las caras
+`+Y`/`−Y` aunque la máquina esté bien orientada.
+
 ## Qué contiene
 
 | Fichero | Para qué |

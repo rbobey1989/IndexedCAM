@@ -309,6 +309,28 @@ halcmd show pin joint.4.pos-fb                   # el joint de C tiene que mover
 Si `KINEMATICS` es `trivkins` (identidad), el control no compone B y C: el
 programa tendría que llevar ya la posición del pivote (ruta B del diseño) y el
 eje de la herramienta depende solo de B, que es justo el síntoma.
+
+### Si todo está bien salvo el dibujo de la vista previa de Axis
+
+El visor 3D de Axis **no simula la máquina**: orienta la herramienta aplicando
+las rotativas en el **orden de `[DISPLAY] GEOMETRY`** (`ToolPart._apply_rotary`
+en `rs274/glcanon_scene.py`). Para que el dibujo coincida con
+`R = Rz(C)·Ry(B)` la cadena tiene que llevar **C antes que B**:
+
+```ini
+[DISPLAY]
+GEOMETRY = XYZCBW
+```
+
+Con `GEOMETRY = XYZBC` la C gira la herramienta sobre su propio eje y no cambia
+la orientación: la herramienta se ve horizontal apuntando siempre al mismo lado
+y da la impresión de que la C no funciona, aunque el cabezal sí gira (se ve en
+la ventana vismach y en el DRO en modo joint). Es el valor que trae el ejemplo
+de LinuxCNC del puente de 5 ejes.
+
+`tests/test_linuxcnc_config.py` comprueba que el orden de las rotativas del INI
+dibuja la herramienta normal a las caras `+X`, `+Y` y `−Y`, y que con el orden
+contrario la C deja de tener efecto.
 - **Consola**:
 
 ```python
