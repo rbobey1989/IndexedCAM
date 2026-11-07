@@ -266,6 +266,49 @@ geometría:
 Esto es lo mismo que valida la simulación de `configs/linuxcnc`: con
 `5axiskins`, `B=90 C=0` pone la herramienta hacia `+X` y la punta queda en el
 plano de la cara, que es el valor por defecto.
+
+### Valores de referencia por cara
+
+Con pivote 250 mm y una pieza de 60×40×30 en el origen, el programa que genera
+el post (sentidos por defecto) deja estos ángulos y este eje de herramienta:
+
+| Cara | normal | B | C | eje resultante |
+| --- | --- | --- | --- | --- |
+| superior | (0, 0, 1) | 0 | 0 | (0, 0, 1) |
+| frontal `+X` | (1, 0, 0) | 90 | 0 | (1, 0, 0) |
+| trasera `-X` | (−1, 0, 0) | 90 | 180 | (−1, 0, 0) |
+| derecha `+Y` | (0, 1, 0) | 90 | 90 | (0, 1, 0) |
+| izquierda `-Y` | (0, −1, 0) | 90 | −90 | (0, −1, 0) |
+
+Se puede comprobar en la máquina sin mecanizar: en la GUI de Axis cambia el DRO
+a **modo joint**, ejecuta la orientación y lee `joint 3` (B) y `joint 4` (C). El
+eje de la herramienta es `(sinB·cosC, sinB·sinC, cosB)`; para la cara `+Y` debe
+salir `(0, 1, 0)`, no `(1, 0, 0)`.
+
+`tests/linuxcnc/check_sim.py` hace exactamente esa comprobación en el simulador
+para las cuatro orientaciones de `validate_bc.ngc` y exige que el eje coincida
+con la normal del plano.
+
+### Si solo fallan las caras laterales en Y (frontal/posterior)
+
+Que la herramienta se quede horizontal apuntando en la dirección de otra cara
+(y que cambiar el sentido o el cero de C no haga nada) significa que **el eje C
+no está inclinando el cabezal** en el control, no que el post esté mal: con una
+máquina `R = Rz(C)·Ry(B)`, invertir B se compensa solo con negar B (el C no hay
+que tocarlo), así que si C no cambia nada, la cinemática del control no está
+aplicando el giro.
+
+Comprueba en el control:
+
+```bash
+inivar -ini <tu>.ini -sec KINS -var KINEMATICS   # debe ser 5axiskins coordinates=xyzbcw
+halcmd show pin 5axiskins                        # pivot-length y tool-length
+halcmd show pin joint.4.pos-fb                   # el joint de C tiene que moverse
+```
+
+Si `KINEMATICS` es `trivkins` (identidad), el control no compone B y C: el
+programa tendría que llevar ya la posición del pivote (ruta B del diseño) y el
+eje de la herramienta depende solo de B, que es justo el síntoma.
 - **Consola**:
 
 ```python

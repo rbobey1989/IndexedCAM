@@ -19,6 +19,7 @@ the real machine: it runs the simulator on a virtual display.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import shutil
@@ -56,13 +57,15 @@ def check(condition: bool, message: str) -> None:
 # --- casos: plano G68.2, angulos B/C y joints esperados ----------------------
 # El pivote del config es 250 mm y la tabla de herramientas tiene Z=0, asi que
 # con B=90 el carro queda 250 mm por detras de la punta y a la misma altura.
-CASES: Sequence[Tuple[str, str, float, float, Tuple[float, ...]]] = (
+# (nombre, bloques del plano, B, C, joints esperados, normal esperada)
+CASES: Sequence[Tuple[str, str, float, float, Tuple[float, ...], Tuple[float, float, float]]] = (
     (
         "cara superior",
         "G68.2 P3 Q1 X30 Y20 Z30 I1 J0 K0\nG68.2 P3 Q2 I0 J0 K1",
         0.0,
         0.0,
         (30.0, 20.0, 30.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0),
     ),
     (
         "cara +X (B90 C0)",
@@ -70,6 +73,7 @@ CASES: Sequence[Tuple[str, str, float, float, Tuple[float, ...]]] = (
         90.0,
         0.0,
         (-190.0, 20.0, -235.0, 90.0, 0.0),
+        (1.0, 0.0, 0.0),
     ),
     (
         "cara +Y (B90 C90)",
@@ -77,6 +81,7 @@ CASES: Sequence[Tuple[str, str, float, float, Tuple[float, ...]]] = (
         90.0,
         90.0,
         (30.0, -210.0, -235.0, 90.0, 90.0),
+        (0.0, 1.0, 0.0),
     ),
     (
         "compuesta (B45 C45)",
@@ -84,6 +89,7 @@ CASES: Sequence[Tuple[str, str, float, float, Tuple[float, ...]]] = (
         45.0,
         45.0,
         (-65.0, -85.0, -43.223, 45.0, 45.0),
+        (0.5, 0.5, 0.7071068),
     ),
 )
 
@@ -268,8 +274,18 @@ def start_machine(ini_path: Optional[str] = None) -> Dict[str, str]:
     return env
 
 
+def tool_axis(env: Dict[str, str]) -> Tuple[float, float, float]:
+    """Eje de la herramienta que la maquina tiene de verdad, segun sus joints.
+
+    Misma formula que ``5axiskins``: n = (sin B cos C, sin B sin C, cos B).
+    """
+    values = joints(env)
+    b, c = math.radians(values[3]), math.radians(values[4])
+    return (math.sin(b) * math.cos(c), math.sin(b) * math.sin(c), math.cos(b))
+
+
 def verify(env: Dict[str, str]) -> None:
-    for name, planes, b, c, expected in CASES:
+    for name, planes, b, c, expected, normal in CASES:
         mdi(env, "G69")
         for block in planes.splitlines():
             mdi(env, block)
@@ -285,6 +301,12 @@ def verify(env: Dict[str, str]) -> None:
         check(
             all(abs(a - e) <= TOLERANCE for a, e in zip(actual, expected)),
             "{}: la punta queda en el origen del plano {}".format(name, ["{:.3f}".format(v) for v in expected]),
+        )
+        axis = tool_axis(env)
+        log("     {}: eje de la herramienta = ({:.3f}, {:.3f}, {:.3f})".format(name, *axis))
+        check(
+            all(abs(a - n) <= 2e-3 for a, n in zip(axis, normal)),
+            "{}: la herramienta queda normal al plano ({:.3f}, {:.3f}, {:.3f})".format(name, *normal),
         )
 
 
