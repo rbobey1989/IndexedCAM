@@ -251,6 +251,18 @@ try:
     window._tick_all(True)
     window._slider.setValue(window._slider.maximum())
     check(window._view._stock is not None, "preview window shows the stock")
+    check(
+        window._detail_box.count() == len(preview.STOCK_DETAILS),
+        "the preview offers the detail levels: %s"
+        % [window._detail_box.itemText(i) for i in range(window._detail_box.count())],
+    )
+    previous = window._timeline.stock.resolution
+    window._detail_box.setCurrentIndex(window._detail_box.findData("Fino"))
+    check(
+        window._timeline.stock.resolution < previous,
+        "a finer detail rebuilds the material: %.3f -> %.3f"
+        % (previous, window._timeline.stock.resolution),
+    )
     window.close()
     check(window._view._stock is None, "closing the preview removes the stock")
     log("first collisions:", [c.first_collision() for c in clips])

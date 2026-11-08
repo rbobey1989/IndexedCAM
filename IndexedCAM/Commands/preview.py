@@ -116,13 +116,29 @@ def build_clips(
     ).build(items)
 
 
-STOCK_MAX_CELLS = 800_000
-NON_BOX_MAX_CELLS = 150_000
+#: voxel size of the previewed material, from coarsest to finest (mm)
+STOCK_DETAILS = (("Grueso", 0.5), ("Normal", 0.25), ("Fino", 0.15))
+DEFAULT_DETAIL = "Normal"
+#: cell budgets: a box is cheap, masking a shaped stock tests every centre
+STOCK_MAX_CELLS = 12_000_000
+NON_BOX_MAX_CELLS = 1_500_000
 REFRESH_SECONDS = 0.15
 
 
-def stock_for_job(job: Any) -> Any:
-    """Voxel model of the Job's stock (None if the Job has no usable stock)."""
+def stock_resolution(detail: str = DEFAULT_DETAIL) -> float:
+    """Voxel size for a detail name (the default when it is unknown)."""
+    for name, resolution in STOCK_DETAILS:
+        if name.casefold() == str(detail).casefold():
+            return resolution
+    return dict(STOCK_DETAILS)[DEFAULT_DETAIL]
+
+
+def stock_for_job(job: Any, detail: str = DEFAULT_DETAIL) -> Any:
+    """Voxel model of the Job's stock (None if the Job has no usable stock).
+
+    ``detail`` picks the voxel size; it is coarsened automatically when the
+    stock is so large that the cell budget would be exceeded.
+    """
     from IndexedCAM.Core.voxel_stock import VoxelStock
 
     shape = getattr(getattr(job, "Stock", None), "Shape", None)
@@ -138,8 +154,7 @@ def stock_for_job(job: Any) -> Any:
 
         cells = NON_BOX_MAX_CELLS
         inside = lambda centres: [shape.isInside(FreeCAD.Vector(*c), 1e-6, True) for c in centres]
-    resolution = (box.XLength * box.YLength * box.ZLength / cells) ** (1 / 3)
-    return VoxelStock(low, high, resolution, cells, inside)
+    return VoxelStock(low, high, stock_resolution(detail), cells, inside)
 
 
 class PreviewCommand:
@@ -198,7 +213,13 @@ class PreviewWindow:
     transitions and the final return to vertical) is one continuous movement.
     """
 
-    def __init__(self, clips: Sequence[Clip], stock: Any = None, job: Any = None) -> None:
+    def __init__(
+        self,
+        clips: Sequence[Clip],
+        stock: Any = None,
+        job: Any = None,
+        detail: str = DEFAULT_DETAIL,
+    ) -> None:
         import FreeCADGui as Gui
         from PySide import QtCore, QtWidgets
 
@@ -208,6 +229,7 @@ class PreviewWindow:
         self._view = ToolView()
         self._timeline = None
         self._job = job
+        self._detail = detail
         self._job_stock_visible = None
         self._last_refresh = 0.0
         self._playlist = Playlist.of(self._clips)
@@ -238,6 +260,14 @@ class PreviewWindow:
         self._stock_box.setChecked(self._timeline is not None)
         self._stock_box.setEnabled(self._timeline is not None)
         self._stock_box.toggled.connect(lambda _: self._show(self._slider.value(), force=True))
+        self._detail_box = QtWidgets.QComboBox()
+        for name, resolution in STOCK_DETAILS:
+            self._detail_box.addItem("{} ({:g} mm)".format(name, resolution), name)
+        self._detail_box.setCurrentIndex(
+            self._detail_box.findData(detail) if self._detail_box.findData(detail) >= 0 else 0
+        )
+        self._detail_box.setEnabled(self._timeline is not None)
+        self._detail_box.currentIndexChanged.connect(lambda _: self._rebuild_stock())
         row = QtWidgets.QHBoxLayout()
         row.addWidget(self._play)
         row.addWidget(self._check)
@@ -248,7 +278,12 @@ class PreviewWindow:
         selection.addStretch()
         for widget in (self._list, self._slider, self._status):
             layout.addWidget(widget)
-        layout.addWidget(self._stock_box)
+        stock_row = QtWidgets.QHBoxLayout()
+        stock_row.addWidget(self._stock_box)
+        stock_row.addWidget(QtWidgets.QLabel("Detalle del material:"))
+        stock_row.addWidget(self._detail_box)
+        stock_row.addStretch()
+        layout.addLayout(stock_row)
         layout.addLayout(selection)
         layout.addLayout(row)
         self._timer = QtCore.QTimer(self._dialog)
@@ -322,6 +357,27 @@ class PreviewWindow:
         self._show(self._slider.value(), force=True)
 
     # --- drawing --------------------------------------------------------
+
+    def _rebuild_stock(self) -> None:
+        """Rebuild the voxel stock at the chosen detail, keeping the frame."""
+        if self._job is None:
+            return
+        from IndexedCAM.Core.stock_timeline import StockTimeline
+
+        position, clip_index, index = self._slider.value(), self._clip_index, None
+        entry = self._playlist.at(position)
+        if entry is not None:
+            index = entry[1]
+        stock = stock_for_job(self._job, self._detail_box.currentData() or DEFAULT_DETAIL)
+        if stock is None:
+            return
+        self._detail = self._detail_box.currentData() or DEFAULT_DETAIL
+        self._timeline = StockTimeline(stock, self._clips)
+        self._stock_box.setChecked(True)
+        if clip_index is not None and index is not None:
+            self._view.show_stock(self._timeline.show(clip_index, index).triangles())
+        else:
+            self._show(position, force=True)
 
     def _hide_job_stock(self) -> None:
         view = getattr(getattr(self._job, "Stock", None), "ViewObject", None)

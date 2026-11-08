@@ -12,6 +12,7 @@ import traceback
 
 import FreeCAD as App
 import FreeCADGui as Gui
+import Part
 
 ROOT = os.environ.get("INDEXEDCAM_ROOT", os.getcwd())
 LOG = os.environ.get("INDEXEDCAM_LOG", os.path.join(tempfile.gettempdir(), "check_cam_bridge.log"))
@@ -169,6 +170,86 @@ try:
         % (span_x, span_y, face_box.XLength, face_box.YLength),
     )
 
+    # --- 3D Pocket y Waterline con el mismo Job -----------------------------
+    def positions(op):
+        """Points the path visits, following the modal coordinates CAM emits."""
+        current = {"X": 0.0, "Y": 0.0, "Z": 0.0}
+        found = []
+        for command in op.Path.Commands:
+            if command.Name not in ("G0", "G1", "G2", "G3"):
+                continue
+            for letter, value in command.Parameters.items():
+                if letter in current:
+                    current[letter] = value
+            found.append(dict(current))
+        return found
+
+    face_box = model.Shape.getElement(inclined_name).BoundBox
+    model_box = model.Shape.BoundBox
+
+    import Path.Op.Pocket as Pocket3D
+    import Path.Op.Waterline as Waterline
+
+    pocket3d = Pocket3D.Create("Pocket3D", parentJob=incl_job)
+    pocket3d.Base = [(model, [inclined_name])]
+    pocket3d.StepDown = 0.5
+    incl_bridge.bind_operation(pocket3d, "Inclinada", face=inclined_name)
+    doc.recompute()
+    visited = positions(pocket3d)
+    cuts3d = [q for q in visited if q["Z"] <= 0.01]
+    check(len(cuts3d) > 10, "3D Pocket cuts the inclined face: %d moves" % len(cuts3d))
+    check(
+        all(face_box.XMin - 1.0 <= q["X"] <= face_box.XMax + 1.0 for q in cuts3d)
+        and all(face_box.YMin - 1.0 <= q["Y"] <= face_box.YMax + 1.0 for q in cuts3d),
+        "3D Pocket stays on the face it machines",
+    )
+
+    # Waterline necesita una forma curva (en un bloque, los contornos coinciden
+    # con el borde del modelo y CAM no emite nada): semiesfera aparte
+    dome_feature = doc.addObject("Part::Feature", "Dome")
+    dome_feature.Shape = Part.makeSphere(20.0).cut(
+        Part.makeBox(60, 60, 20, App.Vector(-30, -30, -20))
+    )
+    doc.recompute()
+    dome_job = CamJob.Create("JobDome", [dome_feature])
+    dome_bridge = CamBridge(dome_job)
+    sphere_index = next(
+        index
+        for index, candidate in enumerate(dome_feature.Shape.Faces, start=1)
+        if candidate.Surface.__class__.__name__ == "Sphere"
+    )
+    sphere_face = dome_feature.Shape.Faces[sphere_index - 1]
+    sphere_normal = sphere_face.normalAt(0.5, 0.5)
+    sphere_centre = sphere_face.CenterOfMass
+    dome_setup = setup(
+        "Domo",
+        (sphere_normal.x, sphere_normal.y, sphere_normal.z),
+        (sphere_centre.x, sphere_centre.y, sphere_centre.z),
+    )
+    dome_model = dome_bridge.attach_setup(dome_feature, dome_setup)
+    check(dome_model in list(dome_job.Model.Group), "the dome model is inside its Job model")
+
+    waterline = Waterline.Create("Waterline", parentJob=dome_job)
+    waterline.Base = []  # el modelo completo, ya orientado
+    waterline.StepOver = 20.0
+    waterline.StepDown = 1.0
+    dome_bridge.bind_operation(waterline, "Domo")
+    waterline.FinalDepth = dome_model.Shape.BoundBox.ZMin
+    doc.recompute()
+    visited = positions(waterline)
+    below = [q for q in visited if q["Z"] < -0.5]
+    check(len(below) > 20, "Waterline cuts below the surface plane: %d moves" % len(below))
+    dome_box = dome_model.Shape.BoundBox
+    lowest = min(q["Z"] for q in visited)
+    log(
+        "     waterline: Z %.2f..%.2f | modelo Z %.2f..%.2f"
+        % (lowest, max(q["Z"] for q in visited), dome_box.ZMin, dome_box.ZMax)
+    )
+    check(
+        abs(lowest - dome_box.ZMin) < 1.0,
+        "Waterline reaches the bottom of the oriented model: %.2f vs %.2f" % (lowest, dome_box.ZMin),
+    )
+
     # --- un documento de la version anterior vuelve a un solo Job -----------
     import json
 
@@ -185,7 +266,7 @@ try:
     stray = Pocket.Create("StrayOp", parentJob=leftover)
     stray.Base = [(leftover.Model.Group[0], ["Face5"])]
     doc.recompute()
-    check(len(find_jobs(doc)) == 3, "the leftover Job exists before adopting it: %d" % len(find_jobs(doc)))
+    check(len(find_jobs(doc)) == 4, "the leftover Job exists before adopting it: %d" % len(find_jobs(doc)))
 
     context = build_context(doc, job)
     check(
