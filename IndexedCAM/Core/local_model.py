@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from IndexedCAM.Core import stale_paths
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import local_transform
 
@@ -57,6 +58,9 @@ class LocalModel:
         obj.setPropertyStatus("Shape", "Transient")
         hide(obj)
         self.execute(obj)
+        # the Shape is transient: it is rebuilt here, out of the recompute pass,
+        # so an operation may still hold the Path saved with the previous one
+        stale_paths.mark(obj.Document)
 
     def dumps(self) -> None:
         return None

@@ -177,6 +177,19 @@ caras) y que un documento de la versión anterior, con un Job por orientación, 
 devuelve a un solo Job al abrirlo: sus operaciones y sus herramientas vuelven al
 Job del usuario y el Job sobrante desaparece.
 
+Las trayectorias que llegan al Preview y al post son siempre las de la pieza
+actual: una comprobación aparte guarda y reabre un documento, mete en la
+operación la trayectoria del estado anterior y verifica que `build_context`
+(lo que usan Preview y Post) la reconstruye. Sin ese refresco, la trayectoria
+guardada en el archivo (calculada con otra geometría) se simularía y se
+postprocesaría tal cual.
+
+```bash
+INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/stale.log \
+  /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_stale_paths.py
+cat /tmp/stale.log
+```
+
 ## Flujo completo con el Job nativo (Face Orientation + Assign Operation)
 
 1. Banco **CAM**: crea un **Job** con tu pieza y añade operaciones (Face, Pocket, Profile…) con su herramienta, como siempre.

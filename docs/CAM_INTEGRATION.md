@@ -20,6 +20,8 @@ Marcados como *probado* (ejecutado en el AppImage) o *código* (leído en `Mod/C
 | `PostProcessorFactory` busca `<nombre>_post.py` en las rutas de post y en `sys.path`, y usa la clase `<Nombre>` (`postname.title()`). El directorio del addon ya está en `sys.path`, así que `indexedcam_post.py` en la raíz es descubrible. | probado + código |
 | Las operaciones se crean por API: `Path.Op.<Tipo>.Create(nombre, parentJob=job)` y se asignan caras con `op.Base = [(objeto, ['FaceN'])]`. | probado |
 | Cada operación expone `op.Path.Commands` tras `recompute()`; el `Job` expone `Operations.Group` y `ToolController`. | probado |
+| CAM **solo** reconstruye la trayectoria cuando una entrada suya se marca como cambiada (`ObjectOp.onChanged`, `updateDepths`). Un `Path` guardado en el archivo puede no corresponder a la geometría actual y la operación seguir en estado `Up-to-date`: `doc.recompute()` **no** lo arregla, solo `op.touch()`. Ocurre porque el `Shape` del `LocalModel` es transitorio y se reconstruye al abrir el archivo fuera del ciclo de recálculo (`onDocumentRestored`), y porque el bruto lo recalcula IndexedCAM llamando al proxy directamente. Medido con el archivo del usuario: trayectoria guardada de 20 015 comandos bajando a Z = −108 mm (atraviesa la pieza) frente a 4 396 comandos con Z = −21 mm tras `touch()`. | probado |
+| El **3D Pocket** (`Path.Op.Pocket`) calcula lo que quita como `getEnvelope(pieza, caras, depthparams).cut(pieza)`: sólido de la proyección de las caras desde `FinalDepth` hacia arriba, menos la pieza. El `FinalDepth` de una operación nueva es `Job.Stock.ZMin` (marco del Job) y CAM no lo deriva de las caras (`FeatureNoFinalDepth`), pero por debajo de la cara más baja el resultado se limita a la propia cavidad: medido con una ranura de R22,5, todos los `FinalDepth` de −22,5 a −136,6 dan la misma trayectoria (0 a −21 mm, dentro de la ranura). | código + probado |
 
 ## Decisión: el Job lo crea el usuario en CAM; IndexedCAM añade orientaciones dentro de él
 
@@ -91,6 +93,7 @@ Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente
 - Todo lo de IndexedCAM son propiedades ocultas del propio Job y clones dentro de `Job.Model`: no se añade ningún objeto al documento, así que el árbol queda como el de cualquier Job de CAM.
 - La cara del Setup queda en Z=0 local y el centro de la cara en el origen XY del WCS.
 - Limitación: se asume un objeto de primer nivel (no dentro de un Body/Part con Placement propio).
+- Las trayectorias que usan el Preview y el post son siempre las actuales: al abrir un documento se marca que sus clones se han reconstruido (`Core/stale_paths.py`) y el primer comando que las necesita las recalcula (`CamBridge.ensure_paths`), porque CAM no lo hace solo. Se hace una vez por carga: después, las ediciones de la pieza llegan a las operaciones por el grafo de dependencias de FreeCAD. Si una operación se editó a mano en CAM, su botón de refrescar sigue siendo el camino normal.
 
 ## Flujo de usuario
 
@@ -174,7 +177,7 @@ Verificado con `tests/freecad/check_collision.py` y `check_assign_operation.py`.
 ## Preview: herramienta por operación y stock tallado
 
 - Cada clip usa la herramienta del `ToolController` de **su** operación (radio, largo y longitud de corte); la lista y el estado del Preview muestran su nombre y dimensiones. La transición usa la herramienta de la operación a la que lleva (no se modela el cambio de herramienta).
-- El stock sale de `Job.Stock` y se voxeliza (`Core/voxel_stock.py`, `numpy`): máx. ~800 000 celdas (resolución ≈ 0,5 mm en una pieza de 60×40×30; menor si el bruto es grande). Si el bruto no es una caja, se enmascara con `isInside` con un máximo de 150 000 celdas.
+- El stock sale de `Job.Stock` y se voxeliza (`Core/voxel_stock.py`, `numpy`). El tamaño de vóxel lo elige el desplegable **Detalle del material** (`Grueso` 0,5 / `Normal` 0,25 / `Fino` 0,15 mm) y se engrosa solo si no cabe en el presupuesto de celdas: 12 000 000 para un bruto en caja y 1 500 000 si hay que enmascararlo con `isInside`.
 - `Core/stock_timeline.py` talla el stock con el eje real (B/C) y el cilindro de corte de cada operación; las transiciones no cortan. Guarda instantáneas al inicio de cada clip, así que el slider puede ir adelante y atrás. Durante la reproducción la malla se reconstruye unas 6 veces por segundo.
 - La vista 3D dibuja la forma real de la herramienta (malla de `ToolBit.Shape`, cacheada por herramienta) de cada operación; si no hay malla se usan cilindros. El portaherramientas y el cabezal siguen siendo cilindros.
 - El Preview oculta `Job.Stock` mientras está abierto y lo restaura al cerrar. La casilla «Mostrar stock» lo activa o desactiva.

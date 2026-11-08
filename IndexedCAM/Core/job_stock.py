@@ -20,6 +20,7 @@ import FreeCAD
 import Part
 from Path.Main.Stock import StockFromBase, shapeBoundBox
 
+from IndexedCAM.Core import stale_paths
 from IndexedCAM.Core.local_model import is_local_model
 
 
@@ -72,5 +73,19 @@ def keep_part_stock(job: Any, refresh: bool = False) -> Any:
     if refresh:
         # CAM's own task panel recomputes the stock this way: cheaper than a
         # whole-document recompute and it repairs an already grown stock
+        previous = stock.Shape.BoundBox if not stock.Shape.isNull() else None
         stock.Proxy.execute(stock)
+        if previous is None or not _same_box(previous, stock.Shape.BoundBox):
+            stale_paths.mark(job.Document)
     return stock
+
+
+def _same_box(first: Any, second: Any, tolerance: float = 1e-6) -> bool:
+    """True if two bound boxes are the same box (within ``tolerance``)."""
+    return all(
+        abs(a - b) <= tolerance
+        for a, b in zip(
+            (first.XMin, first.YMin, first.ZMin, first.XMax, first.YMax, first.ZMax),
+            (second.XMin, second.YMin, second.ZMin, second.XMax, second.YMax, second.ZMax),
+        )
+    )

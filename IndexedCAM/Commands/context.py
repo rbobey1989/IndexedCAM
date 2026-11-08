@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from IndexedCAM.Core import stale_paths
 from IndexedCAM.Core.cam_bridge import CamBridge
 from IndexedCAM.Core.document_storage import JobProgramStorage, JobSetupsStorage
 from IndexedCAM.Core.job_context import resolve_job
@@ -30,6 +31,10 @@ def build_context(document: Any, job: Any) -> JobContext:
     bridge = CamBridge(job)
     _adopt_legacy_jobs(bridge, manager)
     keep_part_stock(job, refresh=True)
+    if stale_paths.take(document):
+        # the geometry was rebuilt on load, so the Path saved in the file may be
+        # the one of the previous part: never simulate or post it
+        bridge.ensure_paths()
     return JobContext(
         document,
         job,

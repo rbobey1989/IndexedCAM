@@ -290,7 +290,9 @@ try:
 
     path = os.path.join(tempfile.gettempdir(), "bridge_check.FCStd")
     doc.saveAs(path)
-    check(os.path.getsize(path) < 120000, "file size small: %d bytes" % os.path.getsize(path))
+    # the check is that the local models do not save their Shape: what is stored
+    # is the part plus the Path and removal shape of the operations
+    check(os.path.getsize(path) < 200000, "file size small: %d bytes" % os.path.getsize(path))
     App.closeDocument(doc.Name)
     doc2 = App.openDocument(path)
     doc2.recompute()

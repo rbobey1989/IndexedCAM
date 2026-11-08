@@ -199,6 +199,24 @@ class CamBridge:
             if getattr(op, OPERATION_SETUP_PROPERTY, None):
                 self.refresh_operation(op)
 
+    def ensure_paths(self) -> List[str]:
+        """Rebuild the ``Path`` of every bound operation and return their names.
+
+        CAM only rebuilds an operation when one of its inputs is flagged as
+        changed, and IndexedCAM changes two of them behind its back (the
+        transient Shape of a local model on load, a repaired stock). An
+        operation restored from such a document keeps the old Path while
+        reporting itself as up to date, so it has to be touched explicitly.
+        """
+        names = []
+        for operation in self.operations():
+            if getattr(operation, OPERATION_SETUP_PROPERTY, None):
+                operation.touch()
+                names.append(operation.Name)
+        if names:
+            self._document.recompute()
+        return names
+
     # -- documents of the previous version -----------------------------------
     def legacy_jobs(self) -> List[Any]:
         """Jobs invented by the previous version (one per orientation)."""
