@@ -56,7 +56,6 @@ try:
     from IndexedCAM.Commands.context import build_context
     from IndexedCAM.Commands.transaction import DocumentTransaction
     from IndexedCAM.Core import local_model
-    from IndexedCAM.Core.document_storage import orientations_group
     from IndexedCAM.Core.face_orientation import FaceOrientationService
     from IndexedCAM.Core.job_context import find_jobs
     from IndexedCAM.Core.operation_assignment import AssignmentError, AssignOperationWorkflow
@@ -109,13 +108,40 @@ try:
     jobs = bridge.jobs.jobs()
     check(len(jobs) == 1, "the Setup gets its own CAM Job: %s" % [j.Label for j in jobs])
     lateral_job = jobs[0]
-    check(lateral_job in orientations_group(doc).Group, "the Job lives in the IndexedCAM container")
+    check(lateral_job.InList == [], "the Job is a root object, like a CAM Job")
+    check(doc.getObject("IndexedCAM") is None, "no extra container object in the document")
     check(lateral_job.Label == "Lateral X B90.0 C0.0", "the Job shows the orientation: %s" % lateral_job.Label)
     model = bridge.jobs.model("Lateral X")
     check(abs(bridge.jobs.setup_of(lateral_job).b - 90.0) < 1e-6, "the Job stores its Setup")
     check(abs(model.Shape.BoundBox.ZMax) < 1e-6, "the Job model has the face at local Z=0")
     check(abs(lateral_job.Stock.Shape.BoundBox.ZMax - 1.0) < 1e-6,
           "the Job stock follows its own model: %s" % lateral_job.Stock.Shape.BoundBox)
+
+    # el arbol: todo dentro del Job, como un Job creado desde CAM
+    from IndexedCAM.Gui.job_view import OrientationJobViewProvider
+
+    proxy = lateral_job.ViewObject.Proxy
+    check(isinstance(proxy, OrientationJobViewProvider),
+          "the Job gets CAM's Job view provider: %s" % type(proxy).__name__)
+    claimed = [o.Name for o in proxy.claimChildren()]
+    log("     claimed:", claimed)
+    check(
+        all(
+            group.Name in claimed
+            for group in (
+                lateral_job.Operations,
+                lateral_job.Model,
+                lateral_job.Stock,
+                lateral_job.SetupSheet,
+                lateral_job.Tools,
+            )
+        ),
+        "Operations, Model, Stock, SetupSheet and Tools are nested inside the Job",
+    )
+    check(
+        bridge.jobs.local_model("Lateral X").Name in claimed,
+        "the local model is nested inside its Job too",
+    )
     check([o.Name for o in bridge.operations_of("Lateral X")] == [op1.Name, op3.Name],
           "chosen operations moved into the Job")
     check(bridge.setup_of(op1) == "Lateral X", "the owning Job identifies the Setup")
@@ -305,7 +331,7 @@ try:
     check(renamed.name == "Cara Lateral" and "Lateral X" not in manager, "Setup renamed")
     check(bridge.jobs.find("Cara Lateral") is not None and bridge.jobs.find("Lateral X") is None,
           "the Job follows the rename")
-    model = local_model.find(orientations_group(doc), "Cara Lateral")
+    model = local_model.find(doc, "Cara Lateral")
     check(model is not None and model.Label == "IndexedCAM_Local_Cara Lateral",
           "local model label updated")
     check([o.Name for o in bridge.operations_of("Cara Lateral")] == ops_before,
@@ -323,11 +349,12 @@ try:
     rctx = build_context(reopened)
     check("Cara Lateral" in rctx.manager, "renamed orientation survives save/reload")
     check(len(rctx.bridge.jobs.jobs()) == 2, "the two Jobs survive reload")
-    reloaded = local_model.find(orientations_group(reopened), "Cara Lateral")
+    reloaded = local_model.find(reopened, "Cara Lateral")
     check(reloaded is not None, "local model survives reload")
-    check(all(not o.Visibility for o in reopened.Objects
-              if hasattr(o, "LocalPlacement") or hasattr(o, "IndexedCAMSetup")),
-          "local models and orientation Jobs stay hidden after reopening")
+    log("     visibilidad:", [(o.Name, o.Visibility) for o in reopened.Objects
+                             if hasattr(o, "LocalPlacement") or hasattr(o, "IndexedCAMSetup")])
+    check(all(not o.Visibility for o in reopened.Objects if hasattr(o, "LocalPlacement")),
+          "local models stay hidden after reopening")
     check(len([o for o in reopened.Objects if hasattr(o, "LocalPlacement")])
           == len(rctx.manager.list()), "one local model per orientation after reload")
     check(len(rctx.program) == 3, "program survives reload")
@@ -335,6 +362,14 @@ try:
           "operations keep the new name after reload")
     check(abs(rctx.bridge.jobs.model("Cara Lateral").Shape.BoundBox.ZMax) < 1e-6,
           "the Job model is still in the local frame after reload")
+    rjob = rctx.bridge.jobs.find("Cara Lateral")
+    check(isinstance(rjob.ViewObject.Proxy, OrientationJobViewProvider),
+          "the Job view provider survives the reload")
+    rclaimed = [o.Name for o in rjob.ViewObject.Proxy.claimChildren()]
+    check(
+        reloaded.Name in rclaimed and rjob.Operations.Name in rclaimed,
+        "the tree is still nested after reload: %s" % rclaimed,
+    )
     log("PASS")
 except Exception:
     log(traceback.format_exc())

@@ -171,7 +171,7 @@ envolvente fuera de la pieza (lo comprueba
 y, con `Part`, `tests/freecad/check_collision.py`).
 
 El margen se configura en FreeCAD con **IndexedCAM → Seguridad**, se guarda en
-el contenedor `IndexedCAM` del documento (viaja en el `.FCStd`) y por defecto es
+los Jobs de orientación del documento (viaja en el `.FCStd`) y por defecto es
 **0 mm**. El mismo número lo usan el Preview y el postprocesador, así que el
 G-code retira exactamente lo que se ve. Implementación: `Core/safety.py`
 (`SafetyConfig`, `DocumentSafetyStorage`) y `Commands/safety.py`.
@@ -263,7 +263,7 @@ de la máquina y del controlador, no de la geometría:
 | Formato | avance por defecto, numerar líneas | 300 mm/min, no |
 
 La ventana muestra además la lista de orientaciones con su **B, C y la normal**,
-que es lo que el post va a usar. Se guarda en el contenedor `IndexedCAM` del
+que es lo que el post va a usar. Se guarda en los Jobs de orientación del
 documento (viaja en el `.FCStd`), así que el mismo documento se postprocesa
 igual la próxima vez. Implementación:
 `Core/post_settings.py` (`PostSettings`, `DocumentPostStorage`),
@@ -363,7 +363,7 @@ from IndexedCAM.Commands.post import build_post, program_name, write_program
 from IndexedCAM.Post.linuxcnc import AxisSigns, LinuxCNCConfig, LinuxCNCPost
 
 doc = FreeCAD.ActiveDocument
-ctx = build_context(doc)                # contenedor, setups, programa y Jobs
+ctx = build_context(doc)                # setups, programa y Jobs de orientación
 post = build_post(doc, ctx.manager, ctx.program, ctx.bridge, program_name(doc))
 config = LinuxCNCConfig(signs=AxisSigns(b_sign=-1.0), line_numbers=True)
 text = LinuxCNCPost().render(post, config)

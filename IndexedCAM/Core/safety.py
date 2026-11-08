@@ -16,6 +16,8 @@ import math
 from dataclasses import dataclass
 from typing import Any, Dict
 
+from IndexedCAM.Core.document_storage import JobSettingStorage as _JobSettingStorage
+
 MINIMUM_MARGIN = 0.0
 MAXIMUM_MARGIN = 500.0
 PROPERTY_NAME = "IndexedCAMSafety"
@@ -73,6 +75,9 @@ class SafetyConfig:
         )
 
 
+SAFETY_PROPERTY = "IndexedCAMSafety"
+
+
 class MemorySafetyStorage:
     """In-memory storage, for tests."""
 
@@ -86,21 +91,18 @@ class MemorySafetyStorage:
         self._config = config
 
 
-class DocumentSafetyStorage:
-    """Safety config stored on the IndexedCAM container of the document.
+class DocumentSafetyStorage(_JobSettingStorage):
+    """Safety config stored on the orientation Jobs of the document.
 
     A JSON string in a hidden property, so it travels inside the .FCStd without
     adding another object to the tree.
     """
 
-    def __init__(self, owner: Any) -> None:
-        self._owner = owner
+    property_name = SAFETY_PROPERTY
+    tooltip = "Safety distance of the head"
 
     def load(self) -> SafetyConfig:
-        from IndexedCAM.Core.document_storage import orientations_group
-
-        group = orientations_group(self._owner)
-        raw = getattr(group, PROPERTY_NAME, "") if group is not None else ""
+        raw = self._raw()
         if not raw:
             return SafetyConfig()
         try:
@@ -109,14 +111,4 @@ class DocumentSafetyStorage:
             return SafetyConfig()
 
     def save(self, config: SafetyConfig) -> None:
-        from IndexedCAM.Core.document_storage import ensure_orientations_group, orientations_group
-
-        group = orientations_group(self._owner)
-        if group is None:
-            group = ensure_orientations_group(self._owner)
-        if not hasattr(group, PROPERTY_NAME):
-            group.addProperty(
-                "App::PropertyString", PROPERTY_NAME, "IndexedCAM", "Safety distance of the head"
-            )
-            group.setEditorMode(PROPERTY_NAME, 2)
-        setattr(group, PROPERTY_NAME, json.dumps(config.to_dict()))
+        self._store(config.to_dict())

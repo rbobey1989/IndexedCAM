@@ -95,10 +95,10 @@ def hide(obj: Any) -> None:
         view.Visibility = False
 
 
-def find(group: Any, setup_name: str) -> Any:
-    """Local model of ``setup_name`` in ``group`` (inside its orientation), or None."""
-    for child in getattr(group, "Group", ()):
-        for obj in (child, *getattr(child, "Group", ())):
-            if getattr(obj, "SetupName", None) == setup_name and hasattr(obj, "LocalPlacement"):
-                return obj
+def find(document: Any, setup_name: str) -> Any:
+    """Local model of ``setup_name`` in the document (None if there is none)."""
+    key = setup_name.strip().casefold()
+    for obj in getattr(document, "Objects", ()):
+        if hasattr(obj, "LocalPlacement") and str(getattr(obj, "SetupName", "")).casefold() == key:
+            return obj
     return None

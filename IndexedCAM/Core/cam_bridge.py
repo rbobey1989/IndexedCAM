@@ -15,13 +15,9 @@ from typing import Any, List, Optional
 
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
-from IndexedCAM.Core.orientation_jobs import OrientationJobs, find_container
+from IndexedCAM.Core.orientation_jobs import CamBridgeError, OrientationJobs
 from IndexedCAM.Core.program import Step
 from IndexedCAM.Machine.envelope import Envelope
-
-
-class CamBridgeError(RuntimeError):
-    """Raised when an operation cannot be bound to a Setup."""
 
 
 class CamBridge:
@@ -29,9 +25,8 @@ class CamBridge:
 
     def __init__(self, document: Any, safe_offset: float = 5.0, clearance_offset: float = 10.0) -> None:
         # nothing is created until a Setup (or a setting) has to be stored
-        document = getattr(document, "Document", document)
-        self._document = document
-        self.jobs = OrientationJobs(document, find_container(document))
+        self._document = getattr(document, "Document", document)
+        self.jobs = OrientationJobs(self._document)
         self._safe_offset = safe_offset
         self._clearance_offset = clearance_offset
 
@@ -93,10 +88,6 @@ class CamBridge:
     def stocks(self) -> List[Any]:
         """Stock object of every orientation Job (hidden while previewing)."""
         return [self.jobs.stock_of(self.jobs.name_of(job)) for job in self.jobs.jobs()]
-
-    @property
-    def container(self) -> Any:
-        return self.jobs.container
 
     def envelope_for(self, operation: Any, base: Envelope) -> Envelope:
         """``base`` with the cutting tool of the operation's CAM tool controller."""
@@ -217,10 +208,8 @@ class CamBridge:
         return heights
 
     def _local_placement(self, setup_name: str) -> Any:
-        for child in getattr(self.jobs.container, "Group", ()):
-            if getattr(child, "SetupName", "").casefold() == setup_name.casefold() and hasattr(child, "LocalPlacement"):
-                return child.LocalPlacement
-        return None
+        model = self.jobs.local_model(setup_name)
+        return model.LocalPlacement if model is not None else None
 
 
 def _number(operation: Any, prop: str) -> Optional[float]:

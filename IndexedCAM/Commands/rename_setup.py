@@ -1,8 +1,10 @@
 """Rename Setup command: change a Setup's name everywhere it is referenced.
 
 ``RenameSetupWorkflow`` has no FreeCAD dependency. Renaming updates, in one
-undoable transaction, the stored Setup, its local model and the ``IndexedSetup``
-property of every CAM operation bound to it.
+undoable transaction, the Job of the orientation (its label and the Setup it
+stores) and its local model. The Job is renamed *before* the Setup is persisted
+because the stored Setup list is what creates, relabels and removes the Jobs: a
+new name with the old Job still in place would look like a new Setup.
 """
 
 from __future__ import annotations
@@ -61,8 +63,8 @@ class RenameSetupWorkflow:
             raise RenameError(error)
         new = new.strip()
         with self._transaction():
-            self._manager.rename(old, new)
             self._renamer.rename_setup(old, new)
+            self._manager.rename(old, new)
             if self._program is not None:
                 self._program.rename_setup(old, new)
         return self._manager.get(new)

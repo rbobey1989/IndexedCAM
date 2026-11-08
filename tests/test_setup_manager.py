@@ -7,9 +7,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from IndexedCAM.Core.document_storage import (  # noqa: E402
-    CONTAINER_NAME,
-    PROPERTY_NAME,
-    DocumentStorage,
+    JobProgramStorage,
+    JobSetupsStorage,
+    JobSettingStorage,
 )
 from IndexedCAM.Core.indexed_setup import IndexedSetup  # noqa: E402
 from IndexedCAM.Core.setup_manager import MemoryStorage, SetupManager  # noqa: E402
@@ -115,17 +115,21 @@ def test_loading_duplicate_names_rejected():
         SetupManager(storage)
 
 
-class FakeObject:
-    """Minimal FreeCAD object: dynamic properties and a Visibility flag."""
+class FakeJob:
+    """Orientation Job stand-in: hidden string properties."""
+
+    TypeId = "Path::FeaturePython"
+    Label = "Job"
+    Visibility = True
 
     def __init__(self, document, name):
         self.Document = document
         self.Name = name
         self.modes = {}
-        self.Visibility = True
+        self.IndexedCAMSetup = ""
 
     def addProperty(self, kind, name, group, doc):
-        assert kind in ("App::PropertyString", "App::PropertyBool")
+        assert kind == "App::PropertyString"
         setattr(self, name, "")
 
     def setEditorMode(self, name, mode):
@@ -133,37 +137,62 @@ class FakeObject:
 
 
 class FakeDocument:
-    def __init__(self):
-        self.objects = {}
+    def __init__(self, jobs=()):
+        self.Objects = list(jobs)
+        self.removed = []
 
     def getObject(self, name):
-        return self.objects.get(name)
+        return next((o for o in self.Objects if o.Name == name), None)
 
-    def addObject(self, kind, name):
-        assert kind == "App::DocumentObjectGroup"
-        self.objects[name] = FakeObject(self, name)
-        return self.objects[name]
+    def recompute(self):
+        pass
+
+    def removeObject(self, name):
+        self.removed.append(name)
+        self.Objects = [o for o in self.Objects if o.Name != name]
 
 
-def test_document_storage_lazy_creation_and_roundtrip():
+def job_for(document, name, setup_name):
+    job = FakeJob(document, name)
+    job.IndexedCAMSetup = json.dumps(
+        IndexedSetup(name=setup_name, normal=(0, 0, 1), b=0, c=0).to_dict()
+    )
+    return job
+
+
+def test_job_setups_storage_reads_the_orientation_jobs():
     doc = FakeDocument()
-    storage = DocumentStorage(doc)
-    assert storage.load() == []
-    assert doc.objects == {}
-    m = SetupManager(storage)
-    assert doc.objects == {}
-    m.add(setup("A"))
-    assert json.loads(getattr(doc.objects[CONTAINER_NAME], PROPERTY_NAME))[0]["name"] == "A"
-    assert SetupManager(DocumentStorage(doc)).names() == ["A"]
+    doc.Objects = [job_for(doc, "JobA", "A"), job_for(doc, "JobB", "B")]
+    assert SetupManager(JobSetupsStorage(doc)).names() == ["A", "B"]
 
 
-def test_document_storage_rejects_non_list():
+def test_job_setups_storage_follows_the_manager():
     doc = FakeDocument()
-    storage = DocumentStorage(doc)
-    storage.save([])
-    setattr(doc.objects[CONTAINER_NAME], PROPERTY_NAME, "{}")
-    with pytest.raises(ValueError, match="list"):
-        storage.load()
+    manager = SetupManager(JobSetupsStorage(doc))
+    assert manager.names() == []
+    # sin pieza de origen en los metadatos no se puede crear el Job
+    manager.add(setup("A"))
+    assert manager.names() == ["A"] and doc.Objects == []
+
+
+def test_program_and_settings_live_on_the_jobs():
+    doc = FakeDocument()
+    doc.Objects = [job_for(doc, "JobA", "A"), job_for(doc, "JobB", "B")]
+
+    class Store(JobSettingStorage):
+        property_name = "IndexedCAMPrueba"
+        tooltip = "prueba"
+
+    store = Store(doc)
+    assert store._raw() == ""
+    store._store({"margin": 3.0})
+    assert json.loads(store._raw()) == {"margin": 3.0}
+    assert all(json.loads(job.IndexedCAMPrueba)["margin"] == 3.0 for job in doc.Objects)
+
+    program = JobProgramStorage(doc)
+    assert program.load() == []
+    program.save([{"setup": "A", "operation": "Pocket"}])
+    assert program.load() == [{"setup": "A", "operation": "Pocket"}]
 
 
 def test_name_error_rules(manager):

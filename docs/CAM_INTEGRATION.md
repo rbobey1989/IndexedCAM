@@ -34,12 +34,15 @@ con el modelo ya colocado en el marco del Setup y un bruto derivado de él:
 
 ```
 Documento
-└─ IndexedCAM (contenedor oculto, App::DocumentObjectGroup)
-   ├─ IndexedCAM_Local_<setup>   modelo local (Shape transitorio)
-   ├─ IndexedCAM_Job_<setup>     Job CAM: Model = clon del modelo local,
-   │                             Stock = caja del clon; Operations = las del Setup
-   ├─ …un par por orientación…
-   └─ propiedades JSON: SetupsJson, StepsJson, IndexedCAMPOST, IndexedCAMSafety
+├─ Job                (el del usuario, intacto)
+├─ <setup> B… C…      Job CAM de la orientación, en la raíz como cualquier Job
+│  ├─ Operations…     las operaciones del Setup
+│  ├─ Model…          clon del modelo local (cara mecanizada en Z=0)
+│  ├─ Stock…          caja de ese clon
+│  ├─ SetupSheet…
+│  ├─ Tools…          su tabla de herramientas
+│  └─ IndexedCAM_Local_<setup>   modelo local (Shape transitorio)
+└─ …
 ```
 
 Reglas derivadas (todas verificadas en 1.1.4):
@@ -63,12 +66,31 @@ Reglas derivadas (todas verificadas en 1.1.4):
 - `Placement` de la operación = inversa del marco del Setup: se sigue dibujando
   la trayectoria sobre la cara que mecaniza. `Path.Commands` permanece en el
   marco local (lo que usan programa, preview y post).
-- El contenedor sustituye al antiguo grupo `Orientations` dentro del Job del
-  usuario; los ajustes (`Core/document_storage.py`, `post_settings.py`,
-  `safety.py`) viajan en el mismo objeto, así que el `.FCStd` no gana objetos
-  visibles.
+- **El árbol es el de CAM.** Un Job creado desde Python no recibe el proveedor
+  de vista de CAM, y sin él sus grupos (`Operations…`, `Model…`, `Tools…`,
+  `SetupSheet…`) aparecen sueltos en la raíz en lugar de anidados dentro del
+  Job. `Gui/job_view.py` asigna `Path.Main.Gui.Job.ViewProvider` (más la
+  extensión `Gui::ViewProviderGroupExtensionPython`) y una subclase que añade el
+  modelo local a `claimChildren`, de modo que el Job se ve exactamente igual que
+  uno creado desde CAM y el único objeto añadido queda dentro. El proveedor
+  viaja en el `GuiDocument.xml`, y `Gui/restore_observer.py` lo vuelve a asignar
+  al abrir documentos antiguos.
+- **No hay contenedor.** Los `IndexedSetup` son los propios Jobs: su lista es la
+  que manda (`Core/document_storage.py::JobSetupsStorage`), así que añadir un
+  Setup crea su Job, renombrarlo cambia la etiqueta y borrarlo se lleva el Job
+  con sus operaciones. El programa y los ajustes del post y de seguridad se
+  guardan en propiedades ocultas de **todos** los Jobs de orientación y se leen
+  del primero, de forma que borrar uno no pierde la configuración. Los documentos
+  del esquema anterior (grupo `IndexedCAM`) se adoptan solos al abrirlos.
 
 ### Por qué cambió (historial)
+
+Segunda revisión del árbol (esta): la primera versión de esta arquitectura
+guardaba los Jobs y los modelos locales dentro de un grupo `IndexedCAM` y los
+creaba sin proveedor de vista, así que en el árbol cada Job aparecía como
+`IndexedCAM > <setup>` con `Operations…`, `Model…`, `Tools…` y `SetupSheet…`
+sueltos al mismo nivel. Ahora los Jobs son objetos de la raíz con sus grupos
+dentro y el documento no gana ningún objeto contenedor.
 
 La primera versión añadía las orientaciones **dentro** del Job del usuario: un
 clon local por Setup en un grupo aparte y las operaciones con `Base` en ese
@@ -113,7 +135,7 @@ Optimización futura si fuese necesario: modo "solo caras" (clon con únicamente
 
 - La `Base` de una operación nativa apunta al clon propio del Job (`Model-<pieza>`), no a la pieza original; los nombres de cara (`FaceN`) coinciden, así que al asociarla se reasigna a las mismas caras del modelo del Job de la orientación.
 - Una operación o un Setup pueden borrarse en CAM en cualquier momento, por eso `IndexedSetup.operations` y el programa se sincronizan desde los Jobs (`bound_steps`).
-- El contenedor `IndexedCAM` es un objeto aparte en el árbol: no aparece dentro de ningún Job y se mantiene oculto (`Gui/restore_observer.py`).
+- El Job de la orientación es un objeto de la raíz con sus grupos dentro: en el árbol no se distingue de un Job creado desde CAM (`Gui/job_view.py`), y el modelo local se mantiene oculto (`Gui/restore_observer.py`).
 - La cara del Setup queda en Z=0 local y el centro de la cara en el origen XY del WCS.
 - Limitación corregida: hasta ahora se ignoraba el `Placement` de la pieza al leer la normal de la cara y una pieza desplazada/girada daba B/C erróneos; `FaceAnalyzer.analyze(face, rotation)` aplica ahora la rotación del objeto.
 
@@ -164,8 +186,9 @@ Modo inicial recomendado: *Máquina*, por ser matemática pura y testeable. Los 
 | `Core/program.py` | Secuencia ordenada de pasos y punto final de cada uno | no |
 | `Core/local_placement.py` | Transformación parte → marco local y alturas por operación | no |
 | `Core/local_model.py` | Clon ligero `LocalModel` por Setup | sí |
-| `Core/orientation_jobs.py` | Contenedor del documento y un Job CAM por orientación (`create`, `update`, `rename`, `remove`, `bound_steps`) | sí |
+| `Core/orientation_jobs.py` | Un Job CAM por orientación (`create`, `ensure`, `rename`, `remove`, `bound_steps`) | sí |
 | `Core/cam_bridge.py` | Fachada de los Jobs: `attach_setup`, `bind_operation`, `refresh_operation`, `refresh_all`, `detach_setup`, `stocks` | sí |
+| `Gui/job_view.py` | Proveedor de vista del Job (grupos anidados + modelo local) | sí |
 | `Core/transition_planner.py` | Retirada, giro sobre esfera, aproximación, alternativas | no |
 | `Core/collision_checker.py` | Interfaz + implementación con `Part` | sí (implementación) |
 | `Machine/envelope.py` | Herramienta, portaherramientas, cabezal, pivote | no |

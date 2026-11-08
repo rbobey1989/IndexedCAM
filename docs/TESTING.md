@@ -127,7 +127,7 @@ manager.rename("Cara 1", "Lado X")
 print(manager.names())
 ```
 
-Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con el mismo código. (Los comandos usan `DocumentStorage(document)`: los setups viven en el contenedor oculto `IndexedCAM` del documento.)
+Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con el mismo código. (Los comandos usan `JobSetupsStorage(document)`: los setups **son** los Jobs de orientación.)
 
 ## Mostrar la triada local de un Setup
 
@@ -179,11 +179,13 @@ con Z positiva.
 2. Banco **IndexedCAM**: selecciona una cara y pulsa **Face Orientation**.
 3. Escribe el nombre y marca las operaciones que quieres mecanizar orientadas a
    esa cara (puedes dejarlas sin marcar).
-4. En el árbol aparece, dentro del contenedor oculto **IndexedCAM**, un modelo
-   local (`IndexedCAM_Local_<nombre>`) y un **Job CAM** por orientación, con la
-   cabeza ya girada: el modelo y el bruto del Job están en el marco del Setup
-   (cara en Z=0). Las operaciones marcadas se mueven a ese Job, apuntan a las
-   mismas caras de su modelo y heredan sus alturas.
+4. En el árbol aparece un **Job CAM** por orientación (etiqueta
+   `<setup> B… C…`), en la raíz como cualquier Job y con sus grupos
+   `Operations…`, `Model…`, `Stock…`, `SetupSheet…` y `Tools…` dentro; el modelo
+   local (`IndexedCAM_Local_<nombre>`) también cuelga de él. El modelo y el
+   bruto del Job están en el marco del Setup (cara en Z=0). Las operaciones
+   marcadas se mueven a ese Job, apuntan a las mismas caras de su modelo y
+   heredan sus alturas.
 5. **Assign Operation** asocia después otras operaciones a una orientación
    existente: la mueve al Job correspondiente y le da su propio controlador de
    herramienta (las tablas de herramientas de CAM no se comparten).
@@ -195,6 +197,17 @@ INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/assign.log \
   xvfb-run -a /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_assign_operation.py
 cat /tmp/assign.log
 ```
+
+Comprueba además el **árbol**: que el Job de la orientación es un objeto de la
+raíz (sin contenedor), que su proveedor de vista es el de CAM y que
+`claimChildren()` devuelve `Operations`, `Model`, `Stock`, `SetupSheet`,
+`Tools` y el modelo local, antes y después de guardar y reabrir.
+
+Los documentos creados con la versión anterior (grupo `IndexedCAM` con los Jobs
+dentro) se adoptan solos al abrirlos: el grupo desaparece y los Jobs pasan a la
+raíz. Si quedan objetos de la primera versión (`Orientations`,
+`IndexedCAM_Orientation*`, clones `IndexedCAM_Local_*` que no sean el modelo de
+un Job), bórralos a mano: ya no los usa nadie.
 
 ## Nombre y renombrado de Setups
 

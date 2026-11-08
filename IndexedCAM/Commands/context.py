@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from IndexedCAM.Core.cam_bridge import CamBridge
-from IndexedCAM.Core.document_storage import DocumentStorage, ProgramStepsStorage
+from IndexedCAM.Core.document_storage import JobProgramStorage, JobSetupsStorage
 from IndexedCAM.Core.operation_assignment import OperationAssigner
 from IndexedCAM.Core.program import Program
 from IndexedCAM.Core.setup_manager import SetupManager
@@ -25,9 +25,11 @@ class IndexedContext:
 
 def build_context(document: Any) -> IndexedContext:
     """Context of ``document`` (nothing is created until something is saved)."""
-    manager = SetupManager(DocumentStorage(document))
+    document = getattr(document, "Document", document)
     bridge = CamBridge(document)
-    program = Program(ProgramStepsStorage(document))
+    bridge.jobs.adopt_legacy()
+    manager = SetupManager(JobSetupsStorage(document))
+    program = Program(JobProgramStorage(document))
     return IndexedContext(
         document,
         manager,

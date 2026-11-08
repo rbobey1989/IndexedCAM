@@ -2,8 +2,10 @@
 
 import FreeCADGui as Gui
 
-from IndexedCAM.Gui import restore_observer
+from IndexedCAM.Gui import job_view, restore_observer
 
+# importing job_view registers the class FreeCAD restores with the document
+_ = job_view.attach
 restore_observer.install()
 
 

@@ -105,7 +105,6 @@ try:
     import Path.Op.MillFace as MillFace
     import Path.Op.Surface as Surface
     from IndexedCAM.Core.cam_bridge import CamBridge, CamBridgeError
-    from IndexedCAM.Core.document_storage import orientations_group
     from IndexedCAM.Core.indexed_setup import IndexedSetup
     from IndexedCAM.Core.local_model import find as find_local_model
     from IndexedCAM.Machine.bc_head import normal_to_bc
@@ -127,15 +126,12 @@ try:
     top_job = bridge.attach_setup(part, top)
     incl_job = bridge.attach_setup(part, incl)
     check(top_job is not incl_job, "one CAM Job per orientation")
+    check(bridge.jobs.jobs() == [top_job, incl_job], "both Jobs are the orientation Jobs")
     check(
-        bridge.jobs.jobs() == [top_job, incl_job]
-        and all(job in orientations_group(doc).Group for job in (top_job, incl_job)),
-        "both Jobs live in the IndexedCAM container",
+        all(job not in getattr(other, "Group", ()) for job in (top_job, incl_job) for other in doc.Objects),
+        "the Jobs are root objects: no container groups them",
     )
-    check(
-        len(bridge.jobs.jobs()) == 2 and len(orientations_group(doc).Group) == 4,
-        "container holds the two Jobs and their two local models",
-    )
+    check(doc.getObject("IndexedCAM") is None, "no IndexedCAM container object in the document")
     from IndexedCAM.Core.job_context import find_jobs
 
     check([j.Name for j in find_jobs(doc)] == [top_job.Name, incl_job.Name], "two CAM Jobs only")
@@ -209,7 +205,7 @@ try:
     check(bridge.setup_of(ocl) == "Inclinada", "setup_of finds the owning Job")
     check(
         [s.setup for s in bridge.bound_steps()] == ["Superior", "Inclinada"],
-        "bound steps follow the container order",
+        "bound steps follow the document order",
     )
     check(ocl.ToolController in list(incl_job.Tools.Group), "tool moved with the operation")
 
@@ -238,7 +234,7 @@ try:
     doc2.recompute()
     reloaded = CamBridge(doc2)
     check([s.name for s in reloaded.jobs.setups()] == ["Superior", "Inclinada"], "jobs survive reload")
-    model = find_local_model(orientations_group(doc2), "Inclinada")
+    model = find_local_model(doc2, "Inclinada")
     check(model is not None and not model.Shape.isNull(), "local model rebuilt after reload")
     check(len(reloaded.operations_of("Inclinada")) == 1, "operation still bound after reload")
     check(

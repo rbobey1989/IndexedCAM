@@ -8,49 +8,35 @@ coordinates cannot machine a tilted face, because the tool would still work
 along the part's +Z.
 
 So every Setup owns a Job whose model is the part already placed in the Setup's
-local frame (Z = tool axis) and whose stock is derived from that model. Indexed
-jobs live in the ``IndexedCAM`` container of the document, next to the hidden
-local model they follow.
+local frame (Z = tool axis) and whose stock is derived from that model. Those
+Jobs are ordinary CAM Jobs at the root of the document (Operations, Model,
+Stock, SetupSheet and Tools inside them, exactly like a Job created by CAM) and
+they carry the Setup in a hidden property, so the document needs no extra
+container object.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Iterator, List, Optional
+from typing import Any, Iterable, List, Mapping, Optional
 
 from IndexedCAM.Core import local_model
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.program import Step
 
-CONTAINER_NAME = "IndexedCAM"
-CONTAINER_MARKER = "IndexedCAMContainer"
 SETUP_PROPERTY = "IndexedCAMSetup"
 GROUP_TITLE = "IndexedCAM"
-
-
-def container(document: Any) -> Any:
-    """The IndexedCAM container of ``document``, created on first use."""
-    existing = document.getObject(CONTAINER_NAME)
-    if existing is not None and hasattr(existing, CONTAINER_MARKER):
-        return existing
-    group = document.addObject("App::DocumentObjectGroup", CONTAINER_NAME)
-    group.Label = CONTAINER_NAME
-    group.addProperty("App::PropertyBool", CONTAINER_MARKER, GROUP_TITLE, "IndexedCAM data")
-    group.setEditorMode(CONTAINER_MARKER, 2)
-    hide(group)
-    return group
-
-
-def find_container(document: Any) -> Optional[Any]:
-    """The IndexedCAM container of ``document`` if it exists (never creates)."""
-    existing = document.getObject(CONTAINER_NAME)
-    if existing is not None and hasattr(existing, CONTAINER_MARKER):
-        return existing
-    return None
+JOB_PREFIX = "IndexedCAM_Job_"
+LEGACY_CONTAINER = "IndexedCAM"
+LEGACY_CONTAINER_MARKER = "IndexedCAMContainer"
 
 
 def is_orientation_job(obj: Any) -> bool:
-    return getattr(obj, "TypeId", "").startswith("Path::FeaturePython") and hasattr(obj, SETUP_PROPERTY)
+    """A CAM Job created by IndexedCAM for one Setup."""
+    return (
+        getattr(obj, "TypeId", "").startswith("Path::FeaturePython")
+        and hasattr(obj, SETUP_PROPERTY)
+    )
 
 
 def hide(obj: Any) -> None:
@@ -63,26 +49,19 @@ def hide(obj: Any) -> None:
 class OrientationJobs:
     """The CAM Jobs of a document, one per Setup, and the operations inside them."""
 
-    def __init__(self, document: Any, container_object: Any = None) -> None:
-        self._document = document
-        self._container = container_object
-
-    @property
-    def container(self) -> Any:
-        """The IndexedCAM container, created the first time it is needed."""
-        if self._container is None:
-            self._container = container(self._document)
-        return self._container
+    def __init__(self, document: Any) -> None:
+        self._document = getattr(document, "Document", document)
 
     # -- jobs -----------------------------------------------------------------
     def jobs(self) -> List[Any]:
-        """The orientation Jobs in container order (empty if there is none)."""
-        if self._container is None:
-            return []
-        return [child for child in self._container.Group if is_orientation_job(child)]
+        """The orientation Jobs, in document order."""
+        return [obj for obj in self._document.Objects if is_orientation_job(obj)]
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Any:
         return iter(self.jobs())
+
+    def __len__(self) -> int:
+        return len(self.jobs())
 
     def find(self, setup_name: str) -> Optional[Any]:
         key = setup_name.casefold()
@@ -109,16 +88,15 @@ class OrientationJobs:
         """Geometry CAM works with for ``setup_name`` (the Job's model clone)."""
         job = self.find(setup_name)
         if job is None:
-            from IndexedCAM.Core.cam_bridge import CamBridgeError
-
             raise CamBridgeError("Setup '{}' has no CAM Job".format(setup_name))
-        group = getattr(job, "Model", None)
-        models = getattr(group, "Group", ())
+        models = getattr(getattr(job, "Model", None), "Group", ())
         if not models:
-            from IndexedCAM.Core.cam_bridge import CamBridgeError
-
             raise CamBridgeError("Job of Setup '{}' has no model".format(setup_name))
         return models[0]
+
+    def local_model(self, setup_name: str) -> Any:
+        """The lightweight model the Job was built from (None if it is gone)."""
+        return local_model.find(self._document, setup_name)
 
     # -- lifecycle ------------------------------------------------------------
     def create(self, source: Any, setup: IndexedSetup) -> Any:
@@ -130,47 +108,76 @@ class OrientationJobs:
         if job is None:
             job = self._new_job(model, setup)
         else:
-            self._reuse_job(job, model, setup)
+            self._reuse_job(job, setup)
         self._document.recompute()
         return job
 
+    def ensure(self, setups: Iterable[Mapping[str, Any]]) -> None:
+        """Make the Jobs match ``setups`` (create, update and remove).
+
+        This is what keeps a Setup and its Job the same thing: the stored list
+        is written by ``SetupManager`` on every change, so adding a Setup
+        creates its Job, renaming it relabels the Job and deleting it removes
+        the Job with its operations.
+        """
+        wanted = {}
+        for data in setups:
+            setup = IndexedSetup.from_dict(data)
+            wanted[setup.name.casefold()] = setup
+        for setup in wanted.values():
+            job = self.find(setup.name)
+            if job is None:
+                source = self._source(setup)
+                if source is not None:
+                    self.create(source, setup)
+                continue
+            model = self.local_model(setup.name)
+            if model is not None and _placement_differs(model, setup):
+                local_model.update(model, setup)
+                self._document.recompute()
+            self._reuse_job(job, setup)
+        for job in self.jobs():
+            if self.name_of(job).casefold() not in wanted:
+                self.remove(self.name_of(job))
+        self._document.recompute()
+
+    def _source(self, setup: IndexedSetup) -> Any:
+        """The document object the Setup was created from (None if it is gone)."""
+        source = str(setup.metadata.get("source", ""))
+        object_name = source.rpartition(".")[0]
+        return self._document.getObject(object_name) if object_name else None
+
     def _local_model(self, source: Any, setup: IndexedSetup) -> Any:
-        model = self._find_local_model(setup.name)
+        model = local_model.find(self._document, setup.name)
         if model is None:
             model = local_model.create(self._document, source, setup)
-            self.container.addObject(model)
         else:
             local_model.update(model, setup)
         return model
 
-    def _find_local_model(self, setup_name: str) -> Any:
-        key = setup_name.casefold()
-        for child in getattr(self._container, "Group", ()):
-            if getattr(child, "SetupName", "").casefold() == key and hasattr(child, "LocalPlacement"):
-                return child
-        return None
-
     def _new_job(self, model: Any, setup: IndexedSetup) -> Any:
+        import FreeCAD as App
         import Path.Main.Job as PathJob
         import Path.Main.Stock as PathStock
 
-        job = PathJob.Create("IndexedCAM_Job_{}".format(_object_safe(setup.name)), [model])
+        job = PathJob.Create(JOB_PREFIX + _object_safe(setup.name), [model])
         job.addProperty("App::PropertyString", SETUP_PROPERTY, GROUP_TITLE, "Orientation")
         job.setEditorMode(SETUP_PROPERTY, 2)
         setattr(job, SETUP_PROPERTY, json.dumps(setup.to_dict()))
         job.Label = self.label(setup)
         job.Stock = PathStock.CreateFromBase(job)
-        self.container.addObject(job)
+        if App.GuiUp:
+            from IndexedCAM.Gui.job_view import attach
+
+            attach(job)
         return job
 
-    def _reuse_job(self, job: Any, model: Any, setup: IndexedSetup) -> None:
+    def _reuse_job(self, job: Any, setup: IndexedSetup) -> None:
         if not hasattr(job, SETUP_PROPERTY):
             job.addProperty("App::PropertyString", SETUP_PROPERTY, GROUP_TITLE, "Orientation")
             job.setEditorMode(SETUP_PROPERTY, 2)
         setattr(job, SETUP_PROPERTY, json.dumps(setup.to_dict()))
         job.Label = self.label(setup)
-        if getattr(job, "Model", None) is not None and not job.Model.Group:
-            job.Model.addObject(model)
         if getattr(job, "Stock", None) is not None:
             job.Stock.touch()
 
@@ -182,19 +189,18 @@ class OrientationJobs:
         job = self.find(old)
         if job is None:
             return
-        model = self._find_local_model(old)
+        model = self.local_model(old)
         if model is not None:
             local_model.rename(model, new)
-        setup = IndexedSetup.from_dict(json.loads(getattr(job, SETUP_PROPERTY)))
+        setup = self.setup_of(job)
         setup.name = new
-        setattr(job, SETUP_PROPERTY, json.dumps(setup.to_dict()))
-        job.Label = self.label(setup)
+        self._reuse_job(job, setup)
 
     def remove(self, setup_name: str) -> None:
         job = self.find(setup_name)
         if job is not None:
             self._document.removeObject(job.Name)
-        model = self._find_local_model(setup_name)
+        model = self.local_model(setup_name)
         if model is not None:
             self._document.removeObject(model.Name)
 
@@ -206,7 +212,7 @@ class OrientationJobs:
         return list(job.Operations.Group)
 
     def operations(self) -> List[Any]:
-        """Every operation of every orientation, in container and Job order."""
+        """Every operation of every orientation, in document and Job order."""
         found: List[Any] = []
         for job in self.jobs():
             found.extend(self.operations_of(self.name_of(job)))
@@ -220,11 +226,55 @@ class OrientationJobs:
         return None
 
     def bound_steps(self) -> List[Step]:
-        return [Step(self.name_of(job), op.Name) for job in self.jobs() for op in self.operations_of(self.name_of(job))]
+        return [
+            Step(self.name_of(job), op.Name)
+            for job in self.jobs()
+            for op in self.operations_of(self.name_of(job))
+        ]
 
     def stock_of(self, setup_name: str) -> Any:
-        job = self.find(setup_name)
-        return getattr(job, "Stock", None)
+        return getattr(self.find(setup_name), "Stock", None)
+
+    # -- legacy documents -----------------------------------------------------
+    def adopt_legacy(self) -> bool:
+        """Free the Jobs of documents written before the container was dropped.
+
+        The previous version kept the Jobs and their local models inside a
+        hidden ``IndexedCAM`` group. The Jobs are now ordinary root objects and
+        the local model is shown inside its Job, so the group is removed once
+        it is empty. Returns True if the document changed.
+        """
+        group = self._document.getObject(LEGACY_CONTAINER)
+        if group is None or not hasattr(group, LEGACY_CONTAINER_MARKER):
+            return False
+        children = [child for child in getattr(group, "Group", ())]
+        for child in children:
+            if is_orientation_job(child) or hasattr(child, "LocalPlacement"):
+                group.removeObject(child)
+        if not getattr(group, "Group", ()):
+            self._document.removeObject(group.Name)
+        self._document.recompute()
+        return True
+
+
+class CamBridgeError(RuntimeError):
+    """Raised when a Setup has no CAM Job (re-exported for the bridge)."""
+
+
+def _placement_differs(model: Any, setup: IndexedSetup) -> bool:
+    """True when the local model is not placed in the Setup's frame any more."""
+    from IndexedCAM.Core.local_model import local_placement
+
+    expected = local_placement(setup)
+    current = model.LocalPlacement
+    if expected.Base != current.Base:
+        return True
+    return (
+        abs(expected.Rotation.Q[0] - current.Rotation.Q[0]) > 1e-9
+        or abs(expected.Rotation.Q[1] - current.Rotation.Q[1]) > 1e-9
+        or abs(expected.Rotation.Q[2] - current.Rotation.Q[2]) > 1e-9
+        or abs(expected.Rotation.Q[3] - current.Rotation.Q[3]) > 1e-9
+    )
 
 
 def _object_safe(name: str) -> str:
