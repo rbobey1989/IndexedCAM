@@ -60,6 +60,17 @@ try:
     mb = bridge.attach_setup(box, sb)
     check(local_model.find(job, "SideX") is mb, "local model found by Setup name")
     check(mb in list(job.Model.Group), "local model lives inside Job.Model (CAM finds the faces)")
+    stock_box = job.Stock.Shape.BoundBox
+    check(
+        abs(stock_box.XLength - 62) < 1e-6
+        and abs(stock_box.YLength - 42) < 1e-6
+        and abs(stock_box.ZLength - 32) < 1e-6,
+        "the Job stock still fits the part after two orientations: %s" % stock_box,
+    )
+    check(
+        type(job.Stock.Proxy).__name__ == "OrientationStock",
+        "the stock ignores the rotated copies: %s" % type(job.Stock.Proxy).__name__,
+    )
     check(abs(mb.Shape.BoundBox.ZMax - 60) < 1e-6, "SideX model: +X face brought to Z=60")
     check(abs(ma.Shape.BoundBox.ZMax - 30) < 1e-6, "TopFace model: Z=30")
 
@@ -205,6 +216,15 @@ try:
     job2 = [o for o in doc2.Objects if hasattr(o, "Operations") and hasattr(o, "Tools")][0]
     mb2 = local_model.find(job2, "SideX")
     check(mb2 is not None and not mb2.Shape.isNull(), "local model rebuilt after reload")
+    check(
+        type(job2.Stock.Proxy).__name__ == "OrientationStock",
+        "the stock proxy survives the reload: %s" % type(job2.Stock.Proxy).__name__,
+    )
+    check(
+        abs(job2.Stock.Shape.BoundBox.XLength - 82) < 1e-6,
+        "the stock follows the edited part (80+1+1) after the reload: %s"
+        % job2.Stock.Shape.BoundBox,
+    )
     reloaded_ops = [op.Name for op in CamBridge(job2).operations_of("SideX")]
     check(
         reloaded_ops == ["OpB", "StrayOp"],

@@ -37,4 +37,4 @@ La persistencia es intercambiable (`SetupStorage`). Todo se guarda en **propieda
 
 ## Puente CAM
 
-`Core/cam_bridge.py` trabaja sobre un Job existente (`CamBridge(job)`): cada Setup aporta un `LocalModel` (`Core/local_model.py`, clon ligero con `Shape` transitorio y `Placement` = inversa del marco del Setup) y cada operación asociada mueve su `Base` a las mismas caras de ese clon y liga sus alturas por expresión. Ver [CAM_INTEGRATION.md](CAM_INTEGRATION.md).
+`Core/job_stock.py` (`OrientationStock`) mantiene el bruto del Job en el tamaño de la pieza aunque los clones de las orientaciones vivan en `Job.Model` (ver [CAM_INTEGRATION.md](CAM_INTEGRATION.md)). `Core/cam_bridge.py` trabaja sobre el Job del usuario (`CamBridge(job)`): cada Setup aporta un `LocalModel` (`Core/local_model.py`, clon ligero con `Shape` transitorio y `Placement` = inversa del marco del Setup) y cada operación asociada mueve su `Base` a las mismas caras de ese clon y liga sus alturas por expresión. Ver [CAM_INTEGRATION.md](CAM_INTEGRATION.md).

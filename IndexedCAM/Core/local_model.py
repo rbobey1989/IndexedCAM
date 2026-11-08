@@ -95,6 +95,11 @@ def hide(obj: Any) -> None:
         view.Visibility = False
 
 
+def is_local_model(obj: Any) -> bool:
+    """True for the lightweight model IndexedCAM adds for one orientation."""
+    return hasattr(obj, "LocalPlacement") and hasattr(obj, "SetupName")
+
+
 def find(owner: Any, setup_name: str) -> Any:
     """Local model of ``setup_name`` inside ``owner`` (a Job, group or document)."""
     key = setup_name.strip().casefold()

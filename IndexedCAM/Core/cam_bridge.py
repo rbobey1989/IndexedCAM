@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from IndexedCAM.Core import local_model
+from IndexedCAM.Core.job_stock import keep_part_stock
 from IndexedCAM.Core.indexed_setup import IndexedSetup
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
 from IndexedCAM.Core.program import Step
@@ -60,6 +61,9 @@ class CamBridge:
         else:
             local_model.update(model, setup)
         self._document.recompute()
+        # the clone joins Job.Model so CAM finds its faces; the stock has to
+        # ignore it, or it would grow to cover every rotated copy of the part
+        keep_part_stock(self.job)
         if model not in getattr(self.job.Model, "Group", ()):
             self.job.Model.addObject(model)
         self._document.recompute()

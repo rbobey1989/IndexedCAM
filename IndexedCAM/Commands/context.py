@@ -8,6 +8,7 @@ from typing import Any, Iterable
 from IndexedCAM.Core.cam_bridge import CamBridge
 from IndexedCAM.Core.document_storage import JobProgramStorage, JobSetupsStorage
 from IndexedCAM.Core.job_context import resolve_job
+from IndexedCAM.Core.job_stock import keep_part_stock
 from IndexedCAM.Core.operation_assignment import OperationAssigner
 from IndexedCAM.Core.program import Program
 from IndexedCAM.Core.setup_manager import SetupManager
@@ -28,6 +29,7 @@ def build_context(document: Any, job: Any) -> JobContext:
     program = Program(JobProgramStorage(job))
     bridge = CamBridge(job)
     _adopt_legacy_jobs(bridge, manager)
+    keep_part_stock(job, refresh=True)
     return JobContext(
         document,
         job,

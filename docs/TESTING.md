@@ -164,8 +164,12 @@ INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
 cat /tmp/bridge.log
 ```
 
-`check_cam_bridge.py` incluye la **prueba de regresión del 3D Surface con un
-solo Job**: una pieza con un chaflán a 45°, un `Surface` sobre esa cara y la
+`check_cam_bridge.py` comprueba además que el **bruto del Job no crece** al
+añadir orientaciones (sigue siendo 62×42×32 con dos clones en `Job.Model`), que
+su proxy `OrientationStock` sobrevive a guardar y reabrir y que sigue a la pieza
+cuando se edita.
+
+Y la **prueba de regresión del 3D Surface con un solo Job**: una pieza con un chaflán a 45°, un `Surface` sobre esa cara y la
 comprobación de que la trayectoria cae sobre el plano local (Z = 0), dentro del
 modelo del Job y cubriendo la cara (23×35 de 28×40). Comprueba también que el
 clon de la orientación es un hijo de `Job.Model` (sin eso CAM no encuentra las

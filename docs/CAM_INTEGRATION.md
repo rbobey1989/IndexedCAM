@@ -11,7 +11,7 @@ Marcados como *probado* (ejecutado en el AppImage) o *código* (leído en `Mod/C
 | Un Job admite varios clones rotados (`Model.addObject`) y operaciones con Base en cada uno; el bruto es único y hay que fijar alturas por operación. | probado |
 | Las operaciones de área (Adaptive, 3D Surface, Waterline) leen **siempre** `Job.Model` y `Job.Stock`: `SurfaceSupport._identifyFacesAndVoids` solo reconoce las caras de objetos que estén en `Job.Model.Group` (si el objeto no está, `mdlIdx = None` y el op falla o cae al modelo completo), y `Area.areaOpShapeForDepths` devuelve `job.Stock.Shape`. | código |
 | Consecuencia medida: con el clon de la orientación **dentro** de `Job.Model`, un `3D Surface` sobre una cara a 45° da 1398 puntos con Z = 0 constante sobre la cara y la cubre (23,3×34,9 de 28,3×40). Con el clon fuera del Job (grupo aparte) el mismo op sale desplazado y con Z positiva. | probado |
-| El precio de meter los clones en `Job.Model`: `StockFromBase` deriva el bruto de `Job.Model.Group`, así que el bruto del Job crece hasta cubrir las copias giradas (62×42×32 → 102×62×62 con dos orientaciones). Las alturas de cada operación van ligadas a su clon por expresión, así que el corte no cambia; solo los rápidos de los 2.5D arrancan más alto (CAM toma `OpStartDepth` del bruto). | probado |
+| Con los clones en `Job.Model`, `StockFromBase` calcularía el bruto sobre **todas** las copias giradas (62×42×32 → 102×62×62 con dos orientaciones). `Core/job_stock.py` lo evita: sustituye el proxy del bruto por `OrientationStock`, el mismo bruto de CAM pero dejando fuera del `BoundBox` los clones de las orientaciones. El bruto del documento se queda en el tamaño de la pieza, sigue a la pieza si se edita y los 2.5D recuperan su `OpStartDepth` de siempre. | probado |
 | Las operaciones CAM generan trayectorias 3 ejes en el marco del Job (plano de trabajo = XY, herramienta = +Z). No existe plano de trabajo inclinado. | código |
 | Si el modelo de un Job se coloca con la rotación inversa del marco del Setup, `MillFace` sobre la cara inclinada genera Z constante (probado: cara con normal +X → `G1 … Z60`). | probado |
 | `Path.Command` admite `B` y `C` (`G0 B90.000000 C0.000000 X1.000000`). | probado |
@@ -31,7 +31,7 @@ Job CAM del usuario  (uno solo, el que creó el usuario)
 │    OpB → Base = cara del clon de "Cara B"
 ├─ Model      : clon de la pieza + un clon local por Setup (Placement = marco
 │               del Setup⁻¹, Shape transitorio, oculto)
-├─ Stock      : el del usuario (crece al añadir clones: ver arriba)
+├─ Stock      : el del usuario; su proxy (`OrientationStock`) ignora los clones
 ├─ SetupSheet
 ├─ Tools
 └─ (propiedades ocultas del Job: IndexedCAMSetups, IndexedCAMProgram,
@@ -48,7 +48,8 @@ Reglas derivadas:
 
 - Toda operación debe llevar `Base` explícito (cara del clon de su Setup); una operación sin Base usaría todos los clones superpuestos.
 - Al reabrir un `.FCStd` FreeCAD vuelve a mostrar los modelos locales; `Gui/restore_observer.py` (instalado en `InitGui.py`) los mantiene ocultos durante la restauración. Al renombrar un Setup, su clon se localiza por `SetupName` y solo cambia de nombre y etiqueta.
-- Los modelos locales viven **dentro de `Job.Model`** y no en un grupo aparte: las operaciones de área de CAM solo encuentran las caras de `Base` si el objeto pertenece al modelo del Job (fila de hechos, arriba). El bruto del Job crece con las copias giradas; las alturas de cada operación van por expresión a su propio clon, así que el mecanizado no cambia.
+- Los modelos locales viven **dentro de `Job.Model`** y no en un grupo aparte: las operaciones de área de CAM solo encuentran las caras de `Base` si el objeto pertenece al modelo del Job (fila de hechos, arriba).
+- El bruto del Job es el del usuario y **no crece**: al añadir la primera orientación, `CamBridge.attach_setup` cambia el proxy del bruto existente por `OrientationStock` (`Core/job_stock.py`), que recalcula la misma caja de CAM (mismos `Ext*`, mismo `Placement`) dejando fuera del `BoundBox` los objetos con `LocalPlacement`. El objeto `Stock` del documento no cambia de nombre, etiqueta ni tamaño, y sigue a la pieza si se edita. Los brutos que no derivan del modelo (caja, cilindro…) no se tocan porque no dependen de `Job.Model`.
 - CAM dibuja toda trayectoria en el marco del Job (herramienta +Z), lejos de la pieza y del bruto. Al asociar una operación se fija su `Placement` a la inversa del marco local del Setup: la trayectoria se ve sobre la cara que mecaniza y con la herramienta apuntando según B/C. `Path.Commands` sigue en el marco local (lo que usan el programa, la previsualización y el post). Los post nativos que aplican `getPathWithPlacement` verían coordenadas de pieza; el post de IndexedCAM (#19) usará `Path.Commands`.
 - Una operación sin `Base` mecanizaría todo el modelo; al asociarla se le asigna la cara con la que se creó la orientación.
 - El marco del Setup está en coordenadas de documento, así que `LocalModel` conserva el `Placement` de su fuente (el clon del Job suele estar desplazado); antes la cara quedaba en Z=-1 en lugar de Z=0.
