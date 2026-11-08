@@ -36,6 +36,13 @@ class LocalModel:
         obj.addProperty(
             "App::PropertyPlacement", "LocalPlacement", GROUP, "Part to local frame"
         )
+        obj.addProperty(
+            "App::PropertyLength",
+            "StockTop",
+            GROUP,
+            "Highest point of the rough stock along the Setup axis",
+        )
+        obj.setPropertyStatus("StockTop", "ReadOnly")
         obj.Source = source
         update(obj, setup)
         obj.setPropertyStatus("Shape", "Transient")
@@ -52,10 +59,20 @@ class LocalModel:
         shape.Placement = App.Placement()
         obj.Shape = shape
         obj.Placement = obj.LocalPlacement.multiply(source_placement)
+        obj.StockTop = _stock_envelope(obj)
 
     def onDocumentRestored(self, obj: Any) -> None:
         obj.Proxy = self
         obj.setPropertyStatus("Shape", "Transient")
+        if not hasattr(obj, "StockTop"):
+            # documents of the version that measured the heights on the part
+            obj.addProperty(
+                "App::PropertyLength",
+                "StockTop",
+                GROUP,
+                "Highest point of the rough stock along the Setup axis",
+            )
+            obj.setPropertyStatus("StockTop", "ReadOnly")
         hide(obj)
         self.execute(obj)
         # the Shape is transient: it is rebuilt here, out of the recompute pass,
@@ -67,6 +84,33 @@ class LocalModel:
 
     def loads(self, state: Any) -> None:
         return None
+
+
+def stock_top(obj: Any) -> float:
+    """Highest point of the rough stock along the Setup axis, in local Z.
+
+    CAM's ``StockFromBase`` is the bounding box of the part, so the box of the
+    source is (almost) the box of the stock; a bigger stock needs a bigger
+    offset in the operation. The part itself is below its own box, never above.
+    """
+    stored = getattr(obj, "StockTop", None)
+    if stored is not None:
+        return float(stored)
+    return _stock_envelope(obj)
+
+
+def _stock_envelope(obj: Any) -> float:
+    """``StockTop`` computed from the source (a document without the property)."""
+    from IndexedCAM.Core.local_placement import LocalTransform, envelope_top
+
+    box = obj.Source.Shape.BoundBox
+    rotation = obj.LocalPlacement.Rotation.Q
+    position = obj.LocalPlacement.Base
+    transform = LocalTransform(tuple(rotation), (position.x, position.y, position.z))
+    top = envelope_top(
+        transform, (box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)
+    )
+    return max(top, float(obj.Shape.BoundBox.ZMax))
 
 
 def update(obj: Any, setup: IndexedSetup) -> None:

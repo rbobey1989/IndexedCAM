@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 from IndexedCAM.Core.indexed_setup import LocalFrame
 
@@ -83,18 +83,43 @@ class OperationHeights:
 
 
 def heights_above(
-    top: float, safe_offset: float = 5.0, clearance_offset: float = 10.0
+    top: float,
+    safe_offset: float = 5.0,
+    clearance_offset: float = 10.0,
+    stock_top: Optional[float] = None,
 ) -> OperationHeights:
     """Start at the highest point of the part in the local frame.
 
     The Job has one stock for all Setups, so its heights are meaningless for a
-    rotated Setup; they are derived from the local model instead.
+    rotated Setup; they are derived from the local model instead. The cutting
+    starts at ``top`` (the face of the Setup), but the rapids have to clear the
+    rough stock, whose envelope in a rotated frame can be far above that face:
+    ``stock_top`` is that envelope and, when it is given, the safe and clearance
+    heights are measured from it.
     """
     if not math.isfinite(top):
         raise ValueError("top must be finite")
     if safe_offset < 0.0 or clearance_offset < safe_offset:
         raise ValueError("need 0 <= safe_offset <= clearance_offset")
-    return OperationHeights(top, top + safe_offset, top + clearance_offset)
+    base = top if stock_top is None or not math.isfinite(stock_top) else max(top, stock_top)
+    return OperationHeights(top, base + safe_offset, base + clearance_offset)
+
+
+def envelope_top(transform: LocalTransform, low: Vector, high: Vector) -> float:
+    """Highest local Z of the box between the corners ``low`` and ``high``.
+
+    The Job's stock is a box in part coordinates. Once the part is moved to a
+    Setup's frame, that box leans and its top can be much higher than the
+    highest point of the part (a chamfered block, for instance): this is the
+    height the rapids have to clear.
+    """
+    corners = (
+        (x, y, z)
+        for x in (low[0], high[0])
+        for y in (low[1], high[1])
+        for z in (low[2], high[2])
+    )
+    return max(apply_transform(transform, corner)[2] for corner in corners)
 
 
 def local_to_part(frame: LocalFrame, point: Vector) -> Vector:

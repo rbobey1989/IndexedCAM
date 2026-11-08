@@ -45,7 +45,8 @@ Verificado en FreeCAD 1.1.4 (dos clones en un mismo Job con `job.Model.addObject
 
 - Cada operación genera la trayectoria en el marco local de su clon (OpB: Z=60 constante sobre la cara inclinada).
 - **Problema:** el bruto del Job es único y abarca la unión de los clones. Con los valores por defecto, OpA arranca en Z=61 hasta 30 (384 comandos) en lugar de cortar solo la cara.
-- **Solución verificada:** IndexedCAM enlaza por operación `StartDepth`, `SafeHeight` y `ClearanceHeight` al punto más alto de su clon mediante **expresiones** (`<clon>.Shape.BoundBox.ZMax * 1 mm + offset`). `FinalDepth` lo sigue calculando CAM desde la cara. Con expresiones las alturas se actualizan solas al editar el modelo original (con valores fijos quedaban obsoletas y CAM emitía avisos "shape is not planar").
+- **Solución verificada:** IndexedCAM enlaza por operación `StartDepth`, `SafeHeight` y `ClearanceHeight` a su clon mediante **expresiones**. El corte arranca en la cara del Setup (`<clon>.Shape.BoundBox.ZMax * 1 mm + 0`) y los rápidos se miden sobre el **bruto**, no sobre la pieza: `<clon>.StockTop + offsets`, donde `StockTop` es el punto más alto del bruto (la caja de la pieza) visto en el marco del Setup. `FinalDepth` lo sigue calculando CAM desde la cara. Con expresiones las alturas se actualizan solas al editar el modelo original (con valores fijos quedaban obsoletas y CAM emitía avisos "shape is not planar").
+- **Por qué el bruto y no la pieza:** en un Setup girado, la caja del bruto se inclina y su esquina puede quedar muy por encima de la cara, aunque toda la pieza esté por debajo de ella. Medido en `Test001.FCStd` (bloque con una cara a 30º): la pieza llega a Z = 0 en el marco del Setup y el bruto a **Z = +65**; con las alturas medidas sobre la pieza, los G0 salían a +5 y +10, es decir **60 mm dentro del bruto** (los rojos del 3D atravesaban el material). Con `StockTop` salen a +68,5 y +73,5, por encima del bruto. `StockTop` se calcula con la caja de la **pieza** (que es el bruto de `StockFromBase`) más los márgenes que le dé el usuario: con un bruto de allowances grandes hay que subir los offsets de la operación.
 
 Reglas derivadas:
 
@@ -70,10 +71,11 @@ Un clon por Setup no debe pesar ni en memoria, ni en el archivo, ni en la recomp
 
 Diseño adoptado:
 
-- `LocalModel` es un `Part::FeaturePython` con un proxy del addon y propiedades `Source` (enlace al modelo) y `Normal`/Setup.
+- `LocalModel` es un `Part::FeaturePython` con un proxy del addon y propiedades `Source` (enlace al modelo), `SetupName`, `LocalPlacement` y `StockTop`.
 - La transformación Placement es la inversa del marco local del Setup (`Core/local_placement.py`, matemática pura y testeada): `p_local = Rᵀ (p − origen)`, no la rotación de arco mínimo, para coincidir con la triada y con el post.
 - `execute`: `shape = Source.Shape.copy(False)` (**comparte la geometría**, no la duplica), `obj.Shape = shape` y `obj.Placement = rotación del Setup` (hay que fijar el `Placement` del objeto; poner la rotación en el `Shape` no basta).
 - `Shape` se marca `Transient`: **no se guarda en el archivo**. Al cargar, `onDocumentRestored` reconstruye la forma directamente (un `touch()` no basta: el clon quedaba con forma nula).
+- `StockTop` (longitud, sólo lectura) es el punto más alto de la caja del bruto visto en el marco del Setup: se calcula en `execute` a partir de la caja de `Source` y de `LocalPlacement`, así que sigue a las ediciones de la pieza. Es la referencia de `SafeHeight` y `ClearanceHeight` (ver arriba). Los documentos anteriores lo reciben vacío al abrirse.
 - Memoria: una única geometría compartida por todos los clones; solo cambia la ubicación.
 - Los clones dependen de `Source`, así que siguen los cambios paramétricos del modelo sin sincronización manual (resuelve el riesgo abierto de sincronización).
 - Verificado: dos clones en un Job, una `MillFace` por clon con alturas propias → OpA (cara +X) Z=60, OpB (cara +Y) Z=40; guardar, reabrir y recalcular restaura clones y trayectorias.

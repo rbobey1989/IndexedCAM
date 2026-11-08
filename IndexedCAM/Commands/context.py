@@ -33,8 +33,9 @@ def build_context(document: Any, job: Any) -> JobContext:
     keep_part_stock(job, refresh=True)
     if stale_paths.take(document):
         # the geometry was rebuilt on load, so the Path saved in the file may be
-        # the one of the previous part: never simulate or post it
-        bridge.ensure_paths()
+        # the one of the previous part: never simulate or post it, and measure
+        # the heights on the restored model again
+        bridge.refresh_all()
     return JobContext(
         document,
         job,

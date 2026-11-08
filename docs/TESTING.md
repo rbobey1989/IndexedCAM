@@ -177,6 +177,15 @@ caras) y que un documento de la versión anterior, con un Job por orientación, 
 devuelve a un solo Job al abrirlo: sus operaciones y sus herramientas vuelven al
 Job del usuario y el Job sobrante desaparece.
 
+Las **alturas** de cada operación se miden sobre el bruto, no solo sobre la
+pieza: `SafeHeight` y `ClearanceHeight` son `<clon>.StockTop + offset`, así que
+en un Setup girado los rápidos salen por encima de la caja del bruto (una
+esquina inclinada de la caja puede estar decenas de milímetros por encima de la
+cara) y no la atraviesan. `check_cam_bridge` lo comprueba en el Setup a 45°: el
+`StockTop` del bloque achaflanado queda 14,14 mm por encima de la cara y el
+`ClearanceHeight` de la operación en 24,14. Si la máquina no llega a esa altura,
+baja los offsets de la operación.
+
 Las trayectorias que llegan al Preview y al post son siempre las de la pieza
 actual: una comprobación aparte guarda y reabre un documento, mete en la
 operación la trayectoria del estado anterior y verifica que `build_context`

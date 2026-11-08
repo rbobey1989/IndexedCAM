@@ -21,8 +21,9 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from IndexedCAM.Core import local_model
-from IndexedCAM.Core.job_stock import keep_part_stock
 from IndexedCAM.Core.indexed_setup import IndexedSetup
+from IndexedCAM.Core.job_stock import keep_part_stock
+from IndexedCAM.Core.local_model import stock_top
 from IndexedCAM.Core.local_placement import OperationHeights, heights_above
 from IndexedCAM.Core.program import Step
 from IndexedCAM.Machine.envelope import Envelope
@@ -172,18 +173,23 @@ class CamBridge:
         model = self._model(name) if name else None
         if model is None:
             raise CamBridgeError("Operation '{}' is not bound to a Setup".format(operation.Label))
+        top = float(model.Shape.BoundBox.ZMax)
         heights = heights_above(
-            model.Shape.BoundBox.ZMax, self._safe_offset, self._clearance_offset
+            top, self._safe_offset, self._clearance_offset, stock_top=stock_top(model)
         )
         # Expressions keep the heights tied to the local model, so a change of
-        # the source model never leaves the operation with stale depths.
-        top = "{}.Shape.BoundBox.ZMax * 1 mm".format(model.Name)
-        for prop, offset in (
-            ("StartDepth", 0.0),
-            ("SafeHeight", self._safe_offset),
-            ("ClearanceHeight", self._clearance_offset),
+        # the source model never leaves the operation with stale depths. The cut
+        # starts at the face of the Setup, but the rapids clear the rough stock:
+        # in a rotated frame its envelope is well above the highest point of the
+        # part (a chamfered block, for instance), so they are measured from it.
+        face = "{}.Shape.BoundBox.ZMax * 1 mm".format(model.Name)
+        stock = "{}.StockTop".format(model.Name)
+        for prop, reference, offset in (
+            ("StartDepth", face, 0.0),
+            ("SafeHeight", stock, self._safe_offset),
+            ("ClearanceHeight", stock, self._clearance_offset),
         ):
-            operation.setExpression(prop, "{} + {} mm".format(top, offset))
+            operation.setExpression(prop, "{} + {} mm".format(reference, offset))
         # CAM draws every path in the Job frame (tool along +Z). The operation's
         # Placement moves it back onto the part, so the path is seen on the face
         # it machines, with the tool pointing along the Setup's axis. The Path
@@ -193,28 +199,19 @@ class CamBridge:
         self._document.recompute()
         return heights
 
-    def refresh_all(self) -> None:
-        """Refresh every bound operation (after the source model changed)."""
-        for op in self.operations():
-            if getattr(op, OPERATION_SETUP_PROPERTY, None):
-                self.refresh_operation(op)
+    def refresh_all(self) -> List[str]:
+        """Rebind and rebuild every bound operation (returns their names).
 
-    def ensure_paths(self) -> List[str]:
-        """Rebuild the ``Path`` of every bound operation and return their names.
-
-        CAM only rebuilds an operation when one of its inputs is flagged as
-        changed, and IndexedCAM changes two of them behind its back (the
-        transient Shape of a local model on load, a repaired stock). An
-        operation restored from such a document keeps the old Path while
-        reporting itself as up to date, so it has to be touched explicitly.
+        Used after the geometry changed behind CAM's back (a document restored
+        from a file, a repaired stock): the operations have to be rebuilt, and
+        the heights rebound to their local model and stock.
         """
         names = []
         for operation in self.operations():
-            if getattr(operation, OPERATION_SETUP_PROPERTY, None):
-                operation.touch()
+            name = getattr(operation, OPERATION_SETUP_PROPERTY, None)
+            if name and self._model(name) is not None:
+                self.refresh_operation(operation)
                 names.append(operation.Name)
-        if names:
-            self._document.recompute()
         return names
 
     # -- documents of the previous version -----------------------------------

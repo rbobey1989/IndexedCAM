@@ -152,7 +152,21 @@ try:
     check(len(surface_points) > 100, "3D Surface computes in the same Job: %d points" % len(surface_points))
     zs = [q["Z"] for q in surface_points]
     check(min(zs) > -5.0, "surface does not cut through the part: Zmin %.2f" % min(zs))
-    check(max(zs) < 60.0, "surface does not rapid far above the local model: Zmax %.2f" % max(zs))
+    stock_top = float(model.StockTop)
+    check(
+        stock_top > model.Shape.BoundBox.ZMax + 1.0,
+        "the stock of a chamfered block leans over the face: StockTop %.2f vs model %.2f"
+        % (stock_top, model.Shape.BoundBox.ZMax),
+    )
+    check(
+        abs(max(local_z(surface)) - (stock_top + 10.0)) < 0.01,  # local_z rounds to 0.01
+        "the rapids clear the stock, not only the part: clearance %.2f (stock top %.2f)"
+        % (max(local_z(surface)), stock_top),
+    )
+    check(
+        max(zs) <= stock_top + 10.0 + 1e-6,
+        "surface does not rapid above the clearance: Zmax %.2f" % max(zs),
+    )
     limits = model.Shape.BoundBox
     inside = all(
         limits.XMin - 1.0 <= q["X"] <= limits.XMax + 1.0
