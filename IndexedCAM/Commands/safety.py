@@ -115,16 +115,21 @@ class SafetyCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
+        from IndexedCAM.Commands.context import open_context, selected_objects
         from IndexedCAM.Commands.transaction import DocumentTransaction
-        from IndexedCAM.Core.safety import DocumentSafetyStorage
+        from IndexedCAM.Core.job_context import JobCancelled
+        from IndexedCAM.Core.safety import JobSafetyStorage
 
         document = FreeCAD.ActiveDocument
         try:
+            ctx = open_context(document, selected_objects())
             stored = SafetyWorkflow(
-                DocumentSafetyStorage(document),
+                JobSafetyStorage(ctx.job),
                 _ask_dialog,
                 lambda: DocumentTransaction(document, "Set indexed safety distance"),
             ).run()
+        except JobCancelled:
+            return
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

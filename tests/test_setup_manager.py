@@ -7,6 +7,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from IndexedCAM.Core.document_storage import (  # noqa: E402
+    PROGRAM_PROPERTY_NAME,
+    SETUPS_PROPERTY_NAME,
     JobProgramStorage,
     JobSetupsStorage,
     JobSettingStorage,
@@ -116,17 +118,10 @@ def test_loading_duplicate_names_rejected():
 
 
 class FakeJob:
-    """Orientation Job stand-in: hidden string properties."""
+    """CAM Job stand-in: hidden string properties, as FreeCAD exposes them."""
 
-    TypeId = "Path::FeaturePython"
-    Label = "Job"
-    Visibility = True
-
-    def __init__(self, document, name):
-        self.Document = document
-        self.Name = name
+    def __init__(self):
         self.modes = {}
-        self.IndexedCAMSetup = ""
 
     def addProperty(self, kind, name, group, doc):
         assert kind == "App::PropertyString"
@@ -136,63 +131,46 @@ class FakeJob:
         self.modes[name] = mode
 
 
-class FakeDocument:
-    def __init__(self, jobs=()):
-        self.Objects = list(jobs)
-        self.removed = []
-
-    def getObject(self, name):
-        return next((o for o in self.Objects if o.Name == name), None)
-
-    def recompute(self):
-        pass
-
-    def removeObject(self, name):
-        self.removed.append(name)
-        self.Objects = [o for o in self.Objects if o.Name != name]
-
-
-def job_for(document, name, setup_name):
-    job = FakeJob(document, name)
-    job.IndexedCAMSetup = json.dumps(
-        IndexedSetup(name=setup_name, normal=(0, 0, 1), b=0, c=0).to_dict()
-    )
-    return job
-
-
-def test_job_setups_storage_reads_the_orientation_jobs():
-    doc = FakeDocument()
-    doc.Objects = [job_for(doc, "JobA", "A"), job_for(doc, "JobB", "B")]
-    assert SetupManager(JobSetupsStorage(doc)).names() == ["A", "B"]
-
-
-def test_job_setups_storage_follows_the_manager():
-    doc = FakeDocument()
-    manager = SetupManager(JobSetupsStorage(doc))
-    assert manager.names() == []
-    # sin pieza de origen en los metadatos no se puede crear el Job
+def test_job_setups_storage_is_lazy_and_round_trips():
+    job = FakeJob()
+    storage = JobSetupsStorage(job)
+    assert storage.load() == []
+    assert not hasattr(job, SETUPS_PROPERTY_NAME)
+    manager = SetupManager(storage)
     manager.add(setup("A"))
-    assert manager.names() == ["A"] and doc.Objects == []
+    assert json.loads(getattr(job, SETUPS_PROPERTY_NAME))[0]["name"] == "A"
+    assert SetupManager(JobSetupsStorage(job)).names() == ["A"]
+    assert job.modes[SETUPS_PROPERTY_NAME] == 2
 
 
-def test_program_and_settings_live_on_the_jobs():
-    doc = FakeDocument()
-    doc.Objects = [job_for(doc, "JobA", "A"), job_for(doc, "JobB", "B")]
+def test_job_setups_storage_rejects_non_list():
+    job = FakeJob()
+    storage = JobSetupsStorage(job)
+    setattr(job, SETUPS_PROPERTY_NAME, "{}")
+    with pytest.raises(ValueError, match="list"):
+        storage.load()
+
+
+def test_program_storage_on_the_job():
+    job = FakeJob()
+    program = JobProgramStorage(job)
+    assert program.load() == []
+    program.save([{"setup": "A", "operation": "Pocket"}])
+    assert program.load() == [{"setup": "A", "operation": "Pocket"}]
+    assert job.modes[PROGRAM_PROPERTY_NAME] == 2
+
+
+def test_generic_setting_storage_on_the_job():
+    job = FakeJob()
 
     class Store(JobSettingStorage):
         property_name = "IndexedCAMPrueba"
         tooltip = "prueba"
 
-    store = Store(doc)
+    store = Store(job)
     assert store._raw() == ""
     store._store({"margin": 3.0})
     assert json.loads(store._raw()) == {"margin": 3.0}
-    assert all(json.loads(job.IndexedCAMPrueba)["margin"] == 3.0 for job in doc.Objects)
-
-    program = JobProgramStorage(doc)
-    assert program.load() == []
-    program.save([{"setup": "A", "operation": "Pocket"}])
-    assert program.load() == [{"setup": "A", "operation": "Pocket"}]
 
 
 def test_name_error_rules(manager):

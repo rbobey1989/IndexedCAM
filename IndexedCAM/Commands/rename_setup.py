@@ -1,10 +1,8 @@
 """Rename Setup command: change a Setup's name everywhere it is referenced.
 
 ``RenameSetupWorkflow`` has no FreeCAD dependency. Renaming updates, in one
-undoable transaction, the Job of the orientation (its label and the Setup it
-stores) and its local model. The Job is renamed *before* the Setup is persisted
-because the stored Setup list is what creates, relabels and removes the Jobs: a
-new name with the old Job still in place would look like a new Setup.
+undoable transaction, the stored Setup, its local model and the ``IndexedSetup``
+property of every CAM operation bound to it.
 """
 
 from __future__ import annotations
@@ -63,8 +61,8 @@ class RenameSetupWorkflow:
             raise RenameError(error)
         new = new.strip()
         with self._transaction():
-            self._renamer.rename_setup(old, new)
             self._manager.rename(old, new)
+            self._renamer.rename_setup(old, new)
             if self._program is not None:
                 self._program.rename_setup(old, new)
         return self._manager.get(new)
@@ -135,11 +133,12 @@ class RenameSetupCommand:
         from PySide import QtWidgets
 
         from IndexedCAM.Commands.transaction import DocumentTransaction
-        from IndexedCAM.Commands.context import build_context
+        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Core.job_context import JobCancelled
 
         document = FreeCAD.ActiveDocument
         try:
-            ctx = build_context(document)
+            ctx = open_context(document, selected_objects())
             renamed = RenameSetupWorkflow(
                 ctx.manager,
                 ctx.bridge,
@@ -147,6 +146,8 @@ class RenameSetupCommand:
                 lambda: DocumentTransaction(document, "Rename indexed setup"),
                 ctx.program,
             ).run()
+        except JobCancelled:
+            return
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

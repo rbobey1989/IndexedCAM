@@ -75,9 +75,6 @@ class SafetyConfig:
         )
 
 
-SAFETY_PROPERTY = "IndexedCAMSafety"
-
-
 class MemorySafetyStorage:
     """In-memory storage, for tests."""
 
@@ -91,14 +88,10 @@ class MemorySafetyStorage:
         self._config = config
 
 
-class DocumentSafetyStorage(_JobSettingStorage):
-    """Safety config stored on the orientation Jobs of the document.
+class JobSafetyStorage(_JobSettingStorage):
+    """Safety config stored on the Job (hidden JSON property)."""
 
-    A JSON string in a hidden property, so it travels inside the .FCStd without
-    adding another object to the tree.
-    """
-
-    property_name = SAFETY_PROPERTY
+    property_name = PROPERTY_NAME
     tooltip = "Safety distance of the head"
 
     def load(self) -> SafetyConfig:

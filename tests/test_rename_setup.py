@@ -83,30 +83,6 @@ def test_failure_inside_transaction_aborts():
     assert events == ["open", "abort"]
 
 
-def test_the_job_is_renamed_before_the_setup_is_persisted():
-    """El listado guardado es el que crea/renombra/borra los Jobs de orientación.
-
-    Si se guardara el nombre nuevo con el Job todavía con el viejo, el Job se
-    vería como un Setup nuevo (y el viejo se borraría con sus operaciones).
-    """
-    events = []
-
-    class Storage(MemoryStorage):
-        def save(self, setups):
-            events.append(("save", [s["name"] for s in setups]))
-            super().save(setups)
-
-    class OrderRenamer:
-        def rename_setup(self, old, new):
-            events.append(("rename", old, new))
-
-    manager = SetupManager(Storage())
-    manager.add(IndexedSetup(name="A", normal=(0, 0, 1), b=0, c=0))
-    events.clear()
-    RenameSetupWorkflow(manager, OrderRenamer(), lambda s, e: ("A", "Z")).run()
-    assert events == [("rename", "A", "Z"), ("save", ["Z"])]
-
-
 def test_rename_also_updates_program():
     from IndexedCAM.Core.program import MemoryProgramStorage, Program, Step
 

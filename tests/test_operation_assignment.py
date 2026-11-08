@@ -28,39 +28,27 @@ def make_op(name):
 
 
 class FakeBridge:
-    """Simulates the orientation Jobs: one operation list per Setup."""
-
     def __init__(self, ops):
         self.ops = ops
-        self.by_setup = {}
         self.calls = []
 
-    def candidates(self):
+    def operations(self):
         return list(self.ops)
 
     def attach_setup(self, source, setup):
         self.calls.append(("attach", setup.name))
-        self.by_setup.setdefault(setup.name, [])
 
     def bind_operation(self, operation, setup_name, face=None):
         self.calls.append(("bind", operation.Name, setup_name))
-        for bound in self.by_setup.values():
-            if operation in bound:
-                bound.remove(operation)
-        self.by_setup.setdefault(setup_name, []).append(operation)
-
-    def operations(self):
-        return [op for bound in self.by_setup.values() for op in bound]
+        operation.IndexedSetup = setup_name
 
     def operations_of(self, setup_name):
-        return list(self.by_setup.get(setup_name, []))
+        return [op for op in self.ops if getattr(op, "IndexedSetup", None) == setup_name]
 
     def bound_steps(self):
         from IndexedCAM.Core.program import Step
 
-        return [
-            Step(name, op.Name) for name, bound in self.by_setup.items() for op in bound
-        ]
+        return [Step(op.IndexedSetup, op.Name) for op in self.ops if hasattr(op, "IndexedSetup")]
 
 
 class Transaction:

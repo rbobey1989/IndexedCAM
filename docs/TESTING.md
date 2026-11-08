@@ -127,7 +127,7 @@ manager.rename("Cara 1", "Lado X")
 print(manager.names())
 ```
 
-Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con el mismo código. (Los comandos usan `JobSetupsStorage(document)`: los setups **son** los Jobs de orientación.)
+Guarda el documento (`Ctrl+S`), ciérralo y ábrelo de nuevo: los setups se recuperan con el mismo código. (Los comandos usan `JobSetupsStorage(job)`: los setups viajan en una propiedad oculta del Job.)
 
 ## Mostrar la triada local de un Setup
 
@@ -149,14 +149,14 @@ Ejes: X rojo, Y verde, Z azul (eje de herramienta, apunta a la normal de la cara
 1. Reinicia FreeCAD y elige el banco **IndexedCAM**.
 2. Selecciona una única cara en la vista 3D.
 3. Pulsa **Face Orientation** (barra de herramientas o menú IndexedCAM).
-4. Se muestra la triada local con B/C calculados; introduce el nombre del Setup (cancelar descarta la triada) y marca las operaciones CAM que se orientarán a él.
-5. Se crea el **Job CAM de esa orientación** (no hace falta crear un Job a mano). `Ctrl+Z` lo deshace y `Ctrl+Y` lo rehace.
+4. Se muestra la triada local con B/C calculados; introduce el nombre del Setup (cancelar descarta la triada) y marca las operaciones del Job que se orientarán a él.
+5. El Setup se guarda en el Job (requiere un Job creado en CAM). `Ctrl+Z` lo deshace y `Ctrl+Y` lo rehace.
 
 Sin selección válida aparece un aviso.
 
 ## Puente con el banco CAM (#12)
 
-Las pruebas puras corren con `python3 -m pytest -q`. La comprobación dentro de FreeCAD (un Job por orientación, modelo y bruto en el marco del Setup, alturas, recarga del archivo) se lanza con el AppImage; el log termina en `PASS`:
+Las pruebas puras corren con `python3 -m pytest -q`. La comprobación dentro de FreeCAD (Job de CAM, clones ligeros, alturas, recarga del archivo) se lanza con el AppImage; el log termina en `PASS`:
 
 ```bash
 INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
@@ -164,60 +164,42 @@ INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/bridge.log \
 cat /tmp/bridge.log
 ```
 
-`check_cam_bridge.py` incluye la **prueba de regresión del 3D Surface**: una
-pieza con un chaflán a 45°, una `Surface` sobre esa cara y la comprobación de
-que la trayectoria cae sobre el plano local (Z≈0), dentro del modelo del Job y
-cubriendo la cara. Antes, con un único Job, esa trayectoria salía desplazada y
-con Z positiva.
+`check_cam_bridge.py` incluye la **prueba de regresión del 3D Surface con un
+solo Job**: una pieza con un chaflán a 45°, un `Surface` sobre esa cara y la
+comprobación de que la trayectoria cae sobre el plano local (Z = 0), dentro del
+modelo del Job y cubriendo la cara (23×35 de 28×40). Comprueba también que el
+clon de la orientación es un hijo de `Job.Model` (sin eso CAM no encuentra las
+caras) y que un documento de la versión anterior, con un Job por orientación, se
+devuelve a un solo Job al abrirlo: sus operaciones y sus herramientas vuelven al
+Job del usuario y el Job sobrante desaparece.
 
-## Flujo completo (Face Orientation + Assign Operation)
+## Flujo completo con el Job nativo (Face Orientation + Assign Operation)
 
-1. Banco **CAM**: crea operaciones (MillFace, Pocket, Adaptive, 3D Surface…)
-   con su herramienta, en cualquier Job. También puedes crearlas después
-   directamente dentro del Job de la orientación (aparece en el árbol como
-   `"<setup> B… C…"`).
-2. Banco **IndexedCAM**: selecciona una cara y pulsa **Face Orientation**.
-3. Escribe el nombre y marca las operaciones que quieres mecanizar orientadas a
-   esa cara (puedes dejarlas sin marcar).
-4. En el árbol aparece un **Job CAM** por orientación (etiqueta
-   `<setup> B… C…`), en la raíz como cualquier Job y con sus grupos
-   `Operations…`, `Model…`, `Stock…`, `SetupSheet…` y `Tools…` dentro; el modelo
-   local (`IndexedCAM_Local_<nombre>`) también cuelga de él. El modelo y el
-   bruto del Job están en el marco del Setup (cara en Z=0). Las operaciones
-   marcadas se mueven a ese Job, apuntan a las mismas caras de su modelo y
-   heredan sus alturas.
-5. **Assign Operation** asocia después otras operaciones a una orientación
-   existente: la mueve al Job correspondiente y le da su propio controlador de
-   herramienta (las tablas de herramientas de CAM no se comparten).
+1. Banco **CAM**: crea un **Job** con tu pieza y añade operaciones (Face, Pocket, Profile…) con su herramienta, como siempre.
+2. Banco **IndexedCAM**: selecciona una cara y pulsa **Face Orientation**. Si el documento tiene varios Jobs se elige a cuál pertenece (se deduce de la selección si la pieza solo está en uno).
+3. Escribe el nombre y marca las operaciones del Job que quieres mecanizar orientadas a esa cara (puedes dejarlas sin marcar).
+4. Todo sigue dentro del **mismo Job**: las operaciones marcadas quedan en `Operations` con la propiedad `IndexedSetup` y su Base apuntando al clon local de su orientación (`IndexedCAM_Local_<nombre>`), que es un hijo de `Model` (así lo encuentran las operaciones de área de CAM). Los Setups, el programa y los ajustes se guardan en propiedades ocultas del Job, sin objetos extra en el árbol.
+5. **Assign Operation** asocia después otras operaciones a una orientación existente. En CAM cada trayectoria está en el sistema local de su Setup (cara en Z=0).
 
-Comprobación automática dentro de FreeCAD (necesita pantalla; el log termina en `PASS`):
+Sin Job, los comandos avisan de que hay que crearlo antes en el banco CAM.
+
+Comprobación automática dentro de FreeCAD (el log termina en `PASS`):
 
 ```bash
 INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/assign.log \
-  xvfb-run -a /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_assign_operation.py
+  /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_assign_operation.py
 cat /tmp/assign.log
 ```
-
-Comprueba además el **árbol**: que el Job de la orientación es un objeto de la
-raíz (sin contenedor), que su proveedor de vista es el de CAM y que
-`claimChildren()` devuelve `Operations`, `Model`, `Stock`, `SetupSheet`,
-`Tools` y el modelo local, antes y después de guardar y reabrir.
-
-Los documentos creados con la versión anterior (grupo `IndexedCAM` con los Jobs
-dentro) se adoptan solos al abrirlos: el grupo desaparece y los Jobs pasan a la
-raíz. Si quedan objetos de la primera versión (`Orientations`,
-`IndexedCAM_Orientation*`, clones `IndexedCAM_Local_*` que no sean el modelo de
-un Job), bórralos a mano: ya no los usa nadie.
 
 ## Nombre y renombrado de Setups
 
 - **Face Orientation** pide el nombre al crear el Setup (por defecto `Setup`, `Setup 2`…). Un nombre vacío o repetido se rechaza con un aviso y se vuelve a preguntar.
-- **Rename Setup**: elige el Setup y escribe el nuevo nombre (el botón OK se desactiva si es inválido). Se actualizan, en una sola transacción deshacible (Ctrl+Z), el Setup guardado, la etiqueta de su modelo local (`IndexedCAM_Local_<nombre>`) y la del Job de la orientación; las operaciones quedan donde están. Los nombres internos de objeto no cambian, así que las expresiones y los enlaces de CAM siguen válidos.
+- **Rename Setup**: elige el Setup y escribe el nuevo nombre (el botón OK se desactiva si es inválido). Se actualizan, en una sola transacción deshacible (Ctrl+Z), el Setup guardado, la etiqueta de su modelo local (`IndexedCAM_Local_<nombre>`) y la propiedad `IndexedSetup` de todas sus operaciones CAM. Los nombres internos de objeto no cambian, así que las expresiones y los enlaces de CAM siguen válidos.
 - `tests/freecad/check_assign_operation.py` comprueba el renombrado y su persistencia tras guardar y reabrir.
 
 ## Programa de operaciones (#14)
 
-Pulsa **Program** en la barra IndexedCAM: lista los pasos en orden (`Setup → operación`) indicando si el paso parte de la posición segura inicial, continúa del anterior o requiere una transición B/C (entre Setups distintos). **Subir/Bajar** reordena (deshacible). El programa se sincroniza solo con los Jobs de orientación: las operaciones nuevas se añaden al final, las eliminadas desaparecen y el renombrado de un Setup se refleja. Las transiciones en sí se planifican en #16.
+Pulsa **Program** en la barra IndexedCAM: lista los pasos en orden (`Setup → operación`) indicando si el paso parte de la posición segura inicial, continúa del anterior o requiere una transición B/C (entre Setups distintos). **Subir/Bajar** reordena (deshacible). El programa se sincroniza solo con el Job: las operaciones nuevas se añaden al final, las eliminadas desaparecen y el renombrado de un Setup se refleja. Las transiciones en sí se planifican en #16.
 
 La comprobación `tests/freecad/check_assign_operation.py` cubre el programa (orden, poses en coordenadas de pieza, renombrado, guardado y reapertura).
 
@@ -282,11 +264,11 @@ coordenadas locales. Detalles y configuración de LinuxCNC en
 
 ```bash
 INDEXEDCAM_ROOT=$PWD INDEXEDCAM_LOG=/tmp/post.log \
-  xvfb-run -a /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_post.py
+  /home/rbobey1989/programas/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage tests/freecad/check_post.py
 cat /tmp/post.log
 ```
 
-`check_post.py` crea dos orientaciones (cada una con su Job) y comprueba, **leyendo el
+`check_post.py` crea un Job con dos orientaciones y comprueba, **leyendo el
 G-code generado**, que el marco que reconstruye el controlador a partir de los
 dos bloques `G68.2 P3` coincide con el `LocalFrame` del Setup (origen, +X,
 normal y el +Y derivado), que la cabeza se indexa a los ángulos de cada Setup,

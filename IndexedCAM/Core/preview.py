@@ -281,8 +281,6 @@ def sphere_for(bound_box: Tuple[Vector, Vector], margin: float = 0.0):
     """
     from IndexedCAM.Core.transition_planner import SafetySphere
 
-    if bound_box is None:
-        raise ValueError("no se encuentra la pieza de la que salió el setup")
     low, high = bound_box
     center = tuple((a + b) / 2.0 for a, b in zip(low, high))
     half_diagonal = sum((b - a) ** 2 for a, b in zip(low, high)) ** 0.5 / 2.0

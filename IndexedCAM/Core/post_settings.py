@@ -87,9 +87,6 @@ class PostSettings:
         return cls(config=config, name=str(data.get("name", "")))
 
 
-POST_PROPERTY = "IndexedCAMPOST"
-
-
 class MemoryPostStorage:
     """In-memory storage, for tests."""
 
@@ -103,10 +100,10 @@ class MemoryPostStorage:
         self._settings = settings
 
 
-class DocumentPostStorage(_JobSettingStorage):
-    """Post settings stored on the orientation Jobs of the document."""
+class JobPostStorage(_JobSettingStorage):
+    """Post settings stored on the Job (hidden JSON property)."""
 
-    property_name = POST_PROPERTY
+    property_name = PROPERTY_NAME
     tooltip = "Post processor options"
 
     def load(self) -> PostSettings:

@@ -1,12 +1,10 @@
-"""Store IndexedCAM data inside the CAM Jobs of the orientations.
+"""Store the IndexedCAM data in hidden properties of the CAM Job.
 
-Every orientation is a native CAM Job (see ``orientation_jobs``), so the data
-IndexedCAM needs travels in hidden properties of that Job: the Setup
-(``IndexedCAMSetup``, written by ``OrientationJobs``), the program order and the
-controller settings. A document-wide value is written to every orientation Job
-and read from the first one that has it, so deleting one Job never loses the
-configuration. No extra object is added to the document: the tree shows only CAM
-Jobs and their own groups.
+Everything IndexedCAM knows travels inside the Job the user created in CAM:
+the Setups, the program order and the controller settings. No extra object is
+added to the document, so the tree shows only the Job with its own groups
+(Operations, Model, Stock, SetupSheet and Tools). A property is created on the
+first save, so merely opening a document never modifies it.
 """
 
 from __future__ import annotations
@@ -14,14 +12,9 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Mapping, Sequence
 
-PROGRAM_PROPERTY_NAME = "IndexedCAMProgram"
 GROUP_TITLE = "IndexedCAM"
-
-
-def orientation_jobs(document: Any) -> Any:
-    from IndexedCAM.Core.orientation_jobs import OrientationJobs
-
-    return OrientationJobs(document)
+SETUPS_PROPERTY_NAME = "IndexedCAMSetups"
+PROGRAM_PROPERTY_NAME = "IndexedCAMProgram"
 
 
 def string_property(owner: Any, name: str, tooltip: str) -> None:
@@ -32,70 +25,56 @@ def string_property(owner: Any, name: str, tooltip: str) -> None:
 
 
 class JobSetupsStorage:
-    """Setup storage whose content *is* the set of orientation Jobs.
+    """Setup storage backed by the Job's own hidden property."""
 
-    ``save`` reconciles the Jobs with the given Setups: a new Setup creates its
-    Job (from the part stored in its metadata), a renamed one relabels it and a
-    deleted one takes the Job and its operations away.
-    """
-
-    def __init__(self, document: Any) -> None:
-        self._document = getattr(document, "Document", document)
+    def __init__(self, job: Any) -> None:
+        self._job = job
 
     def load(self) -> List[Dict[str, Any]]:
-        jobs = orientation_jobs(self._document)
-        return [setup.to_dict() for setup in jobs.setups()]
+        raw = getattr(self._job, SETUPS_PROPERTY_NAME, "")
+        if not raw:
+            return []
+        data = json.loads(raw)
+        if not isinstance(data, list):
+            raise ValueError("stored setups must be a JSON list")
+        return data
 
     def save(self, setups: Sequence[Mapping[str, Any]]) -> None:
-        orientation_jobs(self._document).ensure(setups)
+        string_property(self._job, SETUPS_PROPERTY_NAME, "Serialized setups")
+        setattr(self._job, SETUPS_PROPERTY_NAME, json.dumps(list(setups)))
 
 
 class JobProgramStorage:
-    """Program order stored on the orientation Jobs (read from the first one)."""
+    """Program order stored on the Job."""
 
-    def __init__(self, document: Any) -> None:
-        self._document = getattr(document, "Document", document)
+    def __init__(self, job: Any) -> None:
+        self._job = job
 
     def load(self) -> List[Dict[str, Any]]:
-        for job in orientation_jobs(self._document).jobs():
-            raw = getattr(job, PROGRAM_PROPERTY_NAME, "")
-            if raw:
-                return json.loads(raw)
-        return []
+        raw = getattr(self._job, PROGRAM_PROPERTY_NAME, "")
+        return json.loads(raw) if raw else []
 
     def save(self, steps: Sequence[Mapping[str, Any]]) -> None:
-        data = json.dumps(list(steps))
-        for job in orientation_jobs(self._document).jobs():
-            string_property(job, PROGRAM_PROPERTY_NAME, "Program steps")
-            setattr(job, PROGRAM_PROPERTY_NAME, data)
+        string_property(self._job, PROGRAM_PROPERTY_NAME, "Program steps")
+        setattr(self._job, PROGRAM_PROPERTY_NAME, json.dumps(list(steps)))
 
 
 class JobSettingStorage:
-    """Document-wide setting (safety distance, post options) stored on the Jobs.
+    """Base for a document setting stored on the Job (safety, post options).
 
-    Subclasses provide ``property_name``, ``tooltip`` and a ``load``/``save``
-    pair for the value; the JSON stays in a hidden property of every orientation
-    Job so it travels inside the ``.FCStd``.
+    Subclasses set ``property_name`` and ``tooltip`` and convert to and from
+    their own value type with ``_raw()``/``_store()``.
     """
 
     property_name = ""
     tooltip = ""
 
-    def __init__(self, document: Any) -> None:
-        self._document = getattr(document, "Document", document)
-
-    def _jobs(self) -> List[Any]:
-        return orientation_jobs(self._document).jobs()
+    def __init__(self, job: Any) -> None:
+        self._job = job
 
     def _raw(self) -> str:
-        for job in self._jobs():
-            raw = getattr(job, self.property_name, "")
-            if raw:
-                return raw
-        return ""
+        return getattr(self._job, self.property_name, "")
 
     def _store(self, value: Mapping[str, Any]) -> None:
-        data = json.dumps(dict(value))
-        for job in self._jobs():
-            string_property(job, self.property_name, self.tooltip)
-            setattr(job, self.property_name, data)
+        string_property(self._job, self.property_name, self.tooltip)
+        setattr(self._job, self.property_name, json.dumps(dict(value)))

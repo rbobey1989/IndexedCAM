@@ -133,18 +133,19 @@ class FaceOrientationCommand:
         import FreeCADGui as Gui
         from PySide import QtWidgets
 
-        from IndexedCAM.Commands.context import build_context
+        from IndexedCAM.Commands.context import open_context, selected_objects
         from IndexedCAM.Commands.dialogs import choose_operations
+        from IndexedCAM.Core.job_context import JobCancelled
 
         document = FreeCAD.ActiveDocument
         try:
-            ctx = build_context(document)
+            ctx = open_context(document, selected_objects())
 
             def associate(setup: IndexedSetup) -> None:
-                operations = ctx.assigner.candidates()
+                operations = ctx.bridge.operations()
                 chosen = operations and choose_operations(
                     DIALOG_TITLE,
-                    "Operaciones CAM que se realizarán orientadas a '{}'\n"
+                    "Operaciones del Job que se realizarán orientadas a '{}'\n"
                     "(puedes dejarlas vacías y asignarlas después):".format(setup.name),
                     operations,
                 ) or []
@@ -161,6 +162,8 @@ class FaceOrientationCommand:
                 associate,
             )
             setup = workflow.run(Gui.Selection.getSelectionEx())
+        except JobCancelled:
+            return
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return

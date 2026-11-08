@@ -171,10 +171,10 @@ envolvente fuera de la pieza (lo comprueba
 y, con `Part`, `tests/freecad/check_collision.py`).
 
 El margen se configura en FreeCAD con **IndexedCAM → Seguridad**, se guarda en
-los Jobs de orientación del documento (viaja en el `.FCStd`) y por defecto es
-**0 mm**. El mismo número lo usan el Preview y el postprocesador, así que el
-G-code retira exactamente lo que se ve. Implementación: `Core/safety.py`
-(`SafetyConfig`, `DocumentSafetyStorage`) y `Commands/safety.py`.
+el Job (viaja en el `.FCStd`) y por defecto es **0 mm**. El mismo número lo usan
+el Preview y el postprocesador, así que el G-code retira exactamente lo que se
+ve. Implementación: `Core/safety.py` (`SafetyConfig`, `JobSafetyStorage`) y
+`Commands/safety.py`.
 
 Para una pieza de 60×40×30 la media diagonal son 39,05 mm, así que la retirada
 queda **24 mm sobre la cara superior** y **9 mm sobre una cara lateral**. Antes
@@ -242,8 +242,8 @@ LinuxCNC espera por defecto con `G91.1`).
 
 ## Uso
 
-- **GUI**: **IndexedCAM → Postprocesar** (basta con tener orientaciones con
-  operaciones). Abre la **ventana de opciones** (ver abajo), luego pide el
+- **GUI**: **IndexedCAM → Postprocesar**, con el Job o una operación
+  seleccionada. Abre la **ventana de opciones** (ver abajo), luego pide el
   fichero `.ngc` y escribe el programa. Al terminar muestra un resumen:
   orientaciones, operaciones, herramientas y líneas.
 
@@ -263,10 +263,9 @@ de la máquina y del controlador, no de la geometría:
 | Formato | avance por defecto, numerar líneas | 300 mm/min, no |
 
 La ventana muestra además la lista de orientaciones con su **B, C y la normal**,
-que es lo que el post va a usar. Se guarda en los Jobs de orientación del
-documento (viaja en el `.FCStd`), así que el mismo documento se postprocesa
-igual la próxima vez. Implementación:
-`Core/post_settings.py` (`PostSettings`, `DocumentPostStorage`),
+que es lo que el post va a usar. Se guarda en el Job (viaja en el `.FCStd`), así
+que el mismo Job se postprocesa igual la próxima vez. Implementación:
+`Core/post_settings.py` (`PostSettings`, `JobPostStorage`),
 `Post/linuxcnc.py` (`LinuxCNCConfig`, `AxisSigns`) y `Commands/post.py`.
 
 ### Si una cara lateral se mecaniza "desde dentro"
@@ -358,13 +357,13 @@ contrario la C deja de tener efecto.
 
 ```python
 import FreeCAD, FreeCADGui
-from IndexedCAM.Commands.context import build_context
-from IndexedCAM.Commands.post import build_post, program_name, write_program
+from IndexedCAM.Commands.context import build_context, selected_objects
+from IndexedCAM.Commands.post import build_post, write_program
 from IndexedCAM.Post.linuxcnc import AxisSigns, LinuxCNCConfig, LinuxCNCPost
 
 doc = FreeCAD.ActiveDocument
-ctx = build_context(doc)                # setups, programa y Jobs de orientación
-post = build_post(doc, ctx.manager, ctx.program, ctx.bridge, program_name(doc))
+ctx = build_context(doc, None)          # el único Job del documento
+post = build_post(doc, ctx.manager, ctx.program, ctx.bridge, ctx.job.Label)
 config = LinuxCNCConfig(signs=AxisSigns(b_sign=-1.0), line_numbers=True)
 text = LinuxCNCPost().render(post, config)
 write_program(text, "/tmp/prueba.ngc")

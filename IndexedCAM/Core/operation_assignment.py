@@ -1,9 +1,8 @@
-"""Associate existing CAM operations with indexed Setups.
+"""Associate existing CAM operations of a Job with indexed Setups.
 
-The user creates the operations in the native CAM workbench (in any Job);
-IndexedCAM moves them into the Setup's own Job, whose model is the part already
-placed in the Setup's frame, re-bases their faces on that model and records
-them in the Setup and in the program.
+The user creates the Job and its operations in the native CAM workbench;
+IndexedCAM only orients them: the operation is moved to the Setup's local
+model (same faces) and recorded in the Setup and in the program.
 """
 
 from __future__ import annotations
@@ -39,25 +38,6 @@ def parse_source(source: str) -> SourceFace:
     return SourceFace(object_name, face)
 
 
-def source_object(document: Any, setup: IndexedSetup) -> Optional[Any]:
-    """The document object a Setup was created from (None if it is gone)."""
-    try:
-        reference = parse_source(setup.metadata.get("source", ""))
-    except AssignmentError:
-        return None
-    return document.getObject(reference.object_name)
-
-
-def source_box(document: Any, setup: IndexedSetup) -> Optional[Tuple[Tuple[float, ...], Tuple[float, ...]]]:
-    """(min, max) corners of the part in part coordinates."""
-    obj = source_object(document, setup)
-    shape = getattr(obj, "Shape", None)
-    if shape is None or shape.isNull():
-        return None
-    box = shape.BoundBox
-    return (box.XMin, box.YMin, box.ZMin), (box.XMax, box.YMax, box.ZMax)
-
-
 class OperationAssigner:
     """Binds Job operations to Setups and keeps the stored lists in sync."""
 
@@ -89,15 +69,11 @@ class OperationAssigner:
             self._bridge.bind_operation(operation, setup.name, reference.face)
         self.sync_operations()
 
-    def candidates(self) -> List[Any]:
-        """Every operation that can be assigned to a Setup."""
-        return list(self._bridge.candidates())
-
     def sync_operations(self) -> None:
-        """Make ``IndexedSetup.operations`` and the program match the Cam Jobs.
+        """Make ``IndexedSetup.operations`` and the program match the Job.
 
-        The orientation Jobs are the source of truth (operations can be moved,
-        deleted or edited in CAM at any time).
+        The ``IndexedSetup`` property of each operation is the source of truth
+        (operations can be deleted or edited in CAM at any time).
         """
         for setup in self._manager.list():
             names = [op.Name for op in self._bridge.operations_of(setup.name)]
@@ -139,12 +115,12 @@ class AssignOperationWorkflow:
         setups = self._manager.list()
         if not setups:
             raise AssignmentError(
-                "No hay setups. Crea uno con Face Orientation primero."
+                "No hay setups en este Job. Crea uno con Face Orientation primero."
             )
-        operations = self._assigner.candidates()
+        operations = self._bridge.operations()
         if not operations:
             raise AssignmentError(
-                "No hay operaciones CAM en el documento. Créalas en el banco CAM y vuelve a intentarlo."
+                "El Job no tiene operaciones. Créalas en el banco CAM y vuelve a intentarlo."
             )
         choice = self._chooser(setups, operations)
         if choice is None:

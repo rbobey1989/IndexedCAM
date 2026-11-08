@@ -1,4 +1,4 @@
-"""Qt dialogs shared by the commands (operation checklist, setup choice)."""
+"""Qt dialogs shared by the commands (Job choice, operation checklist)."""
 
 from __future__ import annotations
 
@@ -7,18 +7,21 @@ from typing import Any, List, Optional, Sequence, Tuple
 DIALOG_TITLE = "IndexedCAM"
 
 
-def job_of(operation: Any) -> Optional[Any]:
-    """The CAM Job that holds ``operation`` (its direct parent group)."""
-    for user in getattr(operation, "InList", ()):
-        if hasattr(user, "Operations") and hasattr(user, "Model"):
-            return user
-    return None
+def choose_job(jobs: Sequence[Any]) -> Optional[Any]:
+    """Ask which Job to use when several fit."""
+    import FreeCADGui as Gui
+    from PySide import QtWidgets
+
+    labels = [job.Label for job in jobs]
+    label, accepted = QtWidgets.QInputDialog.getItem(
+        Gui.getMainWindow(), DIALOG_TITLE, "Job de CAM:", labels, 0, False
+    )
+    return jobs[labels.index(label)] if accepted else None
 
 
 def operation_label(operation: Any) -> str:
-    job = job_of(operation)
-    owner = getattr(job, "Label", "") if job is not None else ""
-    return "{}{}".format(operation.Label, "   [{}]".format(owner) if owner else "")
+    owner = getattr(operation, "IndexedSetup", "")
+    return "{}{}".format(operation.Label, "   → {}".format(owner) if owner else "")
 
 
 def _checklist(operations: Sequence[Any], checked: Sequence[Any]) -> Any:

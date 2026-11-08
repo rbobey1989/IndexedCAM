@@ -95,10 +95,20 @@ def hide(obj: Any) -> None:
         view.Visibility = False
 
 
-def find(document: Any, setup_name: str) -> Any:
-    """Local model of ``setup_name`` in the document (None if there is none)."""
+def find(owner: Any, setup_name: str) -> Any:
+    """Local model of ``setup_name`` inside ``owner`` (a Job, group or document)."""
     key = setup_name.strip().casefold()
-    for obj in getattr(document, "Objects", ()):
+    for obj in _candidates(owner):
         if hasattr(obj, "LocalPlacement") and str(getattr(obj, "SetupName", "")).casefold() == key:
             return obj
     return None
+
+
+def _candidates(owner: Any) -> Any:
+    """Objects to search: the Job's model first, then its groups and the document."""
+    model = getattr(owner, "Model", None)
+    if model is not None:
+        return list(getattr(model, "Group", ()))
+    if hasattr(owner, "Objects"):
+        return list(owner.Objects)
+    return list(getattr(owner, "Group", ()))

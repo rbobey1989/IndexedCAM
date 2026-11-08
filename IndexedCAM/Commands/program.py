@@ -50,12 +50,15 @@ class ProgramCommand:
         from PySide import QtWidgets
 
         from IndexedCAM.Commands.transaction import DocumentTransaction
-        from IndexedCAM.Commands.context import build_context
+        from IndexedCAM.Commands.context import open_context, selected_objects
+        from IndexedCAM.Core.job_context import JobCancelled
         from IndexedCAM.Core.program import describe
 
         document = FreeCAD.ActiveDocument
         try:
-            ctx = build_context(document)
+            ctx = open_context(document, selected_objects())
+        except JobCancelled:
+            return
         except ValueError as error:
             QtWidgets.QMessageBox.warning(Gui.getMainWindow(), DIALOG_TITLE, str(error))
             return
